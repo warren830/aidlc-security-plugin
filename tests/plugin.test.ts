@@ -4,7 +4,7 @@
 // plugin-kit and through the shipped aidlc-plugin-test, with no compose drops.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
@@ -61,6 +61,7 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 	describe(`${harness} projection`, () => {
 		let scratch = "";
 		let projection = "";
+		let installed = "";
 		let graph: GraphNode[] = [];
 		let dropLogs = "";
 
@@ -76,9 +77,8 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 				pluginBuilt: projection,
 			});
 			dropLogs = fixture.dropLogs;
-			graph = JSON.parse(
-				readFileSync(join(fixture.projectDir, HARNESS_DIR[harness], "tools", "data", "stage-graph.json"), "utf-8"),
-			) as GraphNode[];
+			installed = join(fixture.projectDir, HARNESS_DIR[harness]);
+			graph = JSON.parse(readFileSync(join(installed, "tools", "data", "stage-graph.json"), "utf-8")) as GraphNode[];
 		});
 
 		afterAll(() => {
@@ -109,6 +109,15 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 			expect(stage?.produces).toContain("security-scan-result");
 			expect(stage?.consumes).toContainEqual({ artifact: "security-threat-model", required: false });
 			expect(stage?.requires_stage).toContain("security-threat-model");
+		});
+
+		test("gives the core DevSecOps agent the security baseline and the AWS Security Agent guidance", () => {
+			const knowledge = join(installed, "knowledge", "aidlc-devsecops-agent");
+			expect(readdirSync(knowledge)).toContain("security-baseline.md");
+			expect(readFileSync(join(knowledge, "security-baseline.md"), "utf-8")).toContain("## SECURITY-15:");
+			const persona = readFileSync(join(installed, "agents", "aidlc-devsecops-agent.md"), "utf-8");
+			expect(persona).toContain("**AWS writes need the person's yes (security plugin).**");
+			expect(persona).toContain("## AWS Security Agent (security plugin)");
 		});
 
 		test("passes the shipped aidlc-plugin-test against a scratch install", () => {

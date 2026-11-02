@@ -14,7 +14,8 @@
       "stages": "stages/",
       "overlays": "contributions/",
       "sensors": "sensors/",
-      "tools": "tools/"
+      "tools": "tools/",
+      "knowledge": "knowledge/"
     }
   }
 }
