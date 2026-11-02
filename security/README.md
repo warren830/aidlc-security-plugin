@@ -241,7 +241,7 @@ people and exactly one fenced `json` block, which is all the gate reads:
 | `scan.status` | `IN_PROGRESS`, `STOPPING`, `STOPPED`, `FAILED`, `COMPLETED` |
 | `findings[].risk_level` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`, `UNKNOWN` |
 | `findings[].status` | `ACTIVE`, `RESOLVED`, `ACCEPTED`, `FALSE_POSITIVE` |
-| `findings[].override` | Present only on a finding you accepted |
+| `findings[].override` | Present only on a finding you accepted in lenient mode |
 
 When you go on without a scan, the record holds `not_run` in place of `scan`
 and `findings`:
@@ -257,33 +257,73 @@ The check fails, and the gate stays closed, when any of these is true:
 - The record is missing, has no `json` block or more than one, or does not
   match the schema.
 - The record says no scan ran, or `scan.status` is not `COMPLETED`.
-- A finding at or above HIGH is not `RESOLVED` and has no valid override. A
-  service status of `ACCEPTED` or `FALSE_POSITIVE` is not your decision, so
-  those findings hold the gate too.
+- A finding at or above HIGH is not `RESOLVED`, unless the override mode is
+  lenient and the finding has a valid override. A service status of
+  `ACCEPTED` or `FALSE_POSITIVE` is not your decision, so those findings hold
+  the gate too.
 - A finding has `risk_level` `UNKNOWN`. It holds the gate at every threshold.
+- `.aidlc-security.json` exists but does not set a mode the check reads (see
+  [Override modes](#override-modes)).
 
 The check also fires on each unit's `code-generation-plan.md`, and fails there
 when no record sits beside the plan, so a unit that skipped the scan cannot
 pass the gate.
 
+### Override modes
+
+The override mode decides whether an `override` in the record can pass a
+finding. Set it in `.aidlc-security.json` at the project root, and commit the
+file so that a change to it shows in review:
+
+```json
+{ "override_mode": "lenient" }
+```
+
+| Mode | What accepts a blocking finding |
+| --- | --- |
+| `strict`, the default | Only your **Override blocking sensors** choice at the gate. The check ignores every `override` in the record. |
+| `lenient` | A valid `override` in the record, or your **Override blocking sensors** choice at the gate. |
+
+Without the file, or without `override_mode`, the mode is strict. When the
+file exists but cannot be read, is not valid JSON, holds another key, or sets
+another mode, the check fails and names the file.
+
+The two modes trade unattended runs against proof that a person decided:
+
+- **Lenient.** The gate cannot tell an override you gave from one the agent
+  wrote. Code Generation's Step 4b tells the agent to write one only after
+  your answer. Under Construction autonomy no one answers, so an agent that
+  writes one anyway passes its own findings.
+- **Strict.** Every accepted risk needs you at the gate, where the engine
+  records your choice. The engine never offers **Override blocking sensors**
+  under Construction autonomy, so an autonomous run stops on any blocking
+  finding until you come back.
+
 ### Accepting a finding
 
 Only you can accept a finding. The agent asks about each blocking finding
 (**Fix it** or **Accept the risk**) and asks for your reason. It records your
-answer with `aidlc engine log decision` and `aidlc engine log answer`, then
-adds `override` to the finding: `by` (your name), `reason` (your words) and
-`at` (when you answered). An override with an empty `by` or `reason`, or an
-`at` that is not an ISO-8601 time, does not count. Under Construction autonomy
-no one answers, so the agent writes no override and the gate stops the run
-for you.
+answer with `aidlc engine log decision` and `aidlc engine log answer`. Under
+Construction autonomy no one answers, so the agent fixes what it can and the
+gate stops the run for you. What happens after your answer depends on the
+mode:
 
-The check lists every accepted finding in its output, under `overrides`. The
-dispatcher keeps that output only for a failed check, in the detail file the
-gate names. On a passing check the audit row records the pass alone, so the
-record of an accepted finding is its `override` in `security-scan-result.md`
-and your answer in the audit log. To open the gate over every remaining
-finding at once, choose the engine's **Override blocking sensors**, which the
-engine records on the gate.
+- **Strict.** The agent adds nothing to the record. The gate stops on the
+  finding, and you accept it there by choosing **Override blocking sensors**.
+  That choice opens the gate over every blocking check that still fails, so
+  the agent fixes the findings you did not accept first.
+- **Lenient.** The agent adds `override` to the finding: `by` (your name),
+  `reason` (your words) and `at` (when you answered). An override with an
+  empty `by` or `reason`, or an `at` that is not an ISO-8601 time, does not
+  count.
+
+In lenient mode the check lists every accepted finding in its output, under
+`overrides`. The dispatcher keeps that output only for a failed check, in the
+detail file the gate names. On a passing check the audit row records the pass
+alone, so the record of an accepted finding is its `override` in
+`security-scan-result.md` and your answer in the audit log. In either mode,
+**Override blocking sensors** opens the gate over every remaining finding at
+once, and the engine records that choice on the gate.
 
 ### Threshold
 
@@ -291,7 +331,8 @@ The gate blocks at HIGH. The AI-DLC dispatcher runs the check with `--stage`
 and `--output-path` only, and it drops any other argument in the manifest's
 `command`, so the installed gate always uses HIGH. To use another level in a
 fork, change `DEFAULT_THRESHOLD` in the worker. To try another level by hand,
-run the worker yourself (from `.kiro/tools/` on Kiro):
+run the worker yourself from the project root, so it reads the same
+`.aidlc-security.json` (on Kiro the worker is in `.kiro/tools/`):
 
 ```bash
 bun .claude/tools/aidlc-sensor-security-findings-gate.ts \

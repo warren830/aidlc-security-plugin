@@ -48,8 +48,10 @@ their harness.
   gate while a unit's diff scan is not `COMPLETED`, or while a finding at or
   above HIGH is neither `RESOLVED` nor accepted by the person. A finding the
   service rated `UNKNOWN` always holds it. The threshold lives in the plugin,
-  never in the scan record. A finding is accepted only through an `override`
-  that records who accepted it, why and when, written after the person's
-  answer is recorded with `engine log decision` and `engine log answer`. Never
-  write one on your own. The person can also open the whole gate with the
-  engine's `Override blocking sensors` choice, which the engine records.
+  never in the scan record. The person accepts a finding with the engine's
+  `Override blocking sensors` choice at the gate, which the engine records.
+  Only when the project's `.aidlc-security.json` sets `override_mode` to
+  `lenient` does an `override` in the record count too, written after the
+  person's answer is recorded with `engine log decision` and
+  `engine log answer`. Never write one on your own, and never change
+  `.aidlc-security.json` unless the person asks.

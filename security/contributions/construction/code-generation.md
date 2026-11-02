@@ -119,7 +119,11 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
    `completed_at` the UTC time you saw `COMPLETED`. Copy no account ID, bucket
    name or role ARN into the file.
 7. **Clear what blocks.** A finding at or above HIGH that is not `RESOLVED`
-   blocks the gate. For each one:
+   blocks the gate. First read the override mode, `override_mode` in
+   `.aidlc-security.json` at the project root: `strict` or `lenient`. When the
+   file or the key is missing, the mode is strict. When the file is there but
+   does not hold one of the two, the gate fails until someone fixes the file,
+   so tell the person. For each blocking finding:
    - **Fix it.** Hand it to the developer agent the way Step 4 delegates the
      build (the `brief` output first, then the finding's name, description,
      code locations and `remediationCode`), and ask it to fix the code without
@@ -128,15 +132,22 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
    - **Accept it.** Only the person can. Ask about each finding as a structured
      question with the options `Fix it` and `Accept the risk`, and when they
      accept, ask for their reason. Record both with `engine log decision` and
-     `engine log answer --details 'Accept the risk: <their reason>'`. Then add
-     `"override": { "by": "<their name>", "reason": "<their words>", "at": "<the UTC time of their answer>" }`
-     to that finding (for `by`, ask their name, or use the project's
-     `git config user.name`). Never write an override the person did not give,
-     and never in a run that no person answers (Construction autonomy): there,
-     fix what you can and let the gate stop for the person.
-   - After a new scan, an override carries forward only to the finding with
-     the same `name` and the same `file_path`, copied unchanged. Say in one
-     line which ones carried forward.
+     `engine log answer --details 'Accept the risk: <their reason>'`. In a run
+     that no person answers (Construction autonomy), fix what you can and let
+     the gate stop for the person.
+     - **Strict mode.** Write no `override` into the record, because the gate
+       ignores it. Tell the person that the gate stops on this finding, and
+       that they accept it there by choosing Override blocking sensors. That
+       choice opens the gate over every blocking check that still fails, so
+       fix the findings they did not accept first.
+     - **Lenient mode.** Add
+       `"override": { "by": "<their name>", "reason": "<their words>", "at": "<the UTC time of their answer>" }`
+       to that finding (for `by`, ask their name, or use the project's
+       `git config user.name`). Never write an override the person did not
+       give, and never in a run that no person answers. After a new scan, an
+       override carries forward only to the finding with the same `name` and
+       the same `file_path`, copied unchanged. Say in one line which ones
+       carried forward.
 8. **Going on without a scan.** When the person chooses that, write the record
    with `not_run` in place of `scan` and `findings`:
    `{ "schema_version": 1, "not_run": { "reason": "<their words>", "at": "<UTC time>" } }`.
@@ -147,6 +158,8 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
 
 The security plugin adds `security-findings-gate`, a blocking gate check. On
 each unit's `security-scan-result.md` it holds the gate while the diff scan is
-not `COMPLETED`, or while a finding at or above HIGH is open without the
-person's override. On `code-generation-plan.md` it holds the gate when no scan
-record sits beside the plan. It reads only that record.
+not `COMPLETED`, or while a finding at or above HIGH is not `RESOLVED`. An
+override in the record clears a finding only in lenient mode, which
+`.aidlc-security.json` at the project root sets. On `code-generation-plan.md`
+it holds the gate when no scan record sits beside the plan. It reads only that
+record and `.aidlc-security.json`.
