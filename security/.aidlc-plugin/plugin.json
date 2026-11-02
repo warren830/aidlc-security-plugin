@@ -11,7 +11,10 @@
   "aidlc": {
     "marketplace": "security-aidlc-plugins",
     "contributes": {
-      "stages": "stages/"
+      "stages": "stages/",
+      "overlays": "contributions/",
+      "sensors": "sensors/",
+      "tools": "tools/"
     }
   }
 }

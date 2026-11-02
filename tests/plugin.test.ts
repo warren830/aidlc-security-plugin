@@ -29,6 +29,17 @@ interface GraphNode {
 	phase: string;
 	lead_agent: string;
 	scopes?: string[];
+	produces?: string[];
+	consumes?: { artifact: string; required: boolean }[];
+	requires_stage?: string[];
+	sensors_applicable?: {
+		id: string;
+		path: string;
+		fire_on: string;
+		default_severity: string;
+		category?: string;
+		matches?: string;
+	}[];
 }
 
 const kit = (await import(join(upstreamDir(), "tests", "harness", "plugin-kit.ts"))) as PluginKit;
@@ -83,6 +94,21 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 			expect(stage?.phase).toBe("inception");
 			expect(stage?.lead_agent).toBe("aidlc-devsecops-agent");
 			expect(stage?.scopes).toEqual(["enterprise", "feature", "mvp", "classic", "workshop"]);
+		});
+
+		test("binds the blocking findings gate to Code Generation, which writes the scan record", () => {
+			const stage = graph.find((node) => node.slug === "code-generation");
+			expect(stage?.sensors_applicable).toContainEqual({
+				id: "security-findings-gate",
+				path: `${HARNESS_DIR[harness]}/sensors/aidlc-security-findings-gate.md`,
+				fire_on: "gate",
+				default_severity: "blocking",
+				category: "security",
+				matches: "**/code-generation/{code-generation-plan,security-scan-result}.md",
+			});
+			expect(stage?.produces).toContain("security-scan-result");
+			expect(stage?.consumes).toContainEqual({ artifact: "security-threat-model", required: false });
+			expect(stage?.requires_stage).toContain("security-threat-model");
 		});
 
 		test("passes the shipped aidlc-plugin-test against a scratch install", () => {
