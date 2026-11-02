@@ -1,8 +1,8 @@
 // security-findings-gate sensor: holds the Code Generation gate while a unit's
 // AWS Security Agent diff scan record has an open finding at or above the
-// threshold. It reads only that record, never the network. The dispatcher
-// treats any non-zero exit as "could not run", so every verdict, pass or fail,
-// is one JSON line on stdout with exit 0.
+// threshold. It reads only that record and the project's override mode, never
+// the network. The dispatcher treats any non-zero exit as "could not run", so
+// every verdict, pass or fail, is one JSON line on stdout with exit 0.
 //
 // Self-contained: a plugin tool must not import the framework's aidlc-lib.
 import { readFileSync } from "node:fs";
@@ -21,6 +21,19 @@ const THRESHOLDS = RISK_LEVELS.filter((level): level is Threshold => level !== "
 // The manifest's command cannot carry a threshold: the dispatcher runs this file
 // with --stage and --output-path only. A different gate level is a change here.
 const DEFAULT_THRESHOLD: Threshold = "HIGH";
+
+// The dispatcher runs this file with the project root as its working directory,
+// so a committed file there reaches every real fire and shows in review. An
+// environment variable would not: the agent sets the environment of the
+// commands it runs. Strict is the default because the gate cannot tell whether
+// a person or the agent wrote an override into the record.
+const CONFIG_FILE = ".aidlc-security.json";
+const OVERRIDE_MODES = ["strict", "lenient"] as const;
+type OverrideMode = (typeof OVERRIDE_MODES)[number];
+const DEFAULT_OVERRIDE_MODE: OverrideMode = "strict";
+const CONFIG_SHAPE = OVERRIDE_MODES.map((mode) => `{"override_mode": "${mode}"}`).join(" or ");
+const ACCEPT_AT_GATE =
+	"Fix it and scan again, or the person can accept the risk by choosing Override blocking sensors at the gate.";
 
 const FINDING_STATUSES = ["ACTIVE", "RESOLVED", "ACCEPTED", "FALSE_POSITIVE"] as const;
 const SCAN_STATUSES = ["IN_PROGRESS", "STOPPING", "STOPPED", "FAILED", "COMPLETED"] as const;
@@ -60,11 +73,14 @@ type ScanRecord =
 	| { kind: "scanned"; scan: Scan; findings: Finding[] }
 	| { kind: "not-run"; reason: string; at: string };
 
+type ModeSetting = { mode: OverrideMode } | { problem: string };
+
 interface Verdict {
 	pass: boolean;
 	findings: string[];
 	findings_count: number;
 	threshold: string;
+	override_mode: OverrideMode | null;
 	overrides: string[];
 }
 
@@ -76,6 +92,38 @@ function isTimestamp(value: string): boolean {
 
 function isThreshold(value: string): value is Threshold {
 	return (THRESHOLDS as string[]).includes(value);
+}
+
+function isOverrideMode(value: unknown): value is OverrideMode {
+	return typeof value === "string" && (OVERRIDE_MODES as readonly string[]).includes(value);
+}
+
+// Only a missing file or key falls back to strict. Anything else that is not
+// one of the two modes fails the gate, so a typo never decides the mode.
+function readOverrideMode(projectDir: string): ModeSetting {
+	const path = join(projectDir, CONFIG_FILE);
+	const problem = (what: string): ModeSetting => ({ problem: `${path} ${what}. It must hold ${CONFIG_SHAPE}.` });
+	let text: string;
+	try {
+		text = readFileSync(path, "utf-8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { mode: DEFAULT_OVERRIDE_MODE };
+		return problem(`cannot be read (${error instanceof Error ? error.message : String(error)})`);
+	}
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch (error) {
+		return problem(`is not valid JSON (${error instanceof Error ? error.message : String(error)})`);
+	}
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return problem("is not a JSON object");
+	const unread = Object.keys(raw).filter((key) => key !== "override_mode");
+	if (unread.length > 0) {
+		return problem(`has keys the gate does not read (${unread.map((key) => JSON.stringify(key)).join(", ")})`);
+	}
+	const mode = (raw as Record<string, unknown>).override_mode;
+	if (mode === undefined) return { mode: DEFAULT_OVERRIDE_MODE };
+	return isOverrideMode(mode) ? { mode } : problem(`sets override_mode to ${JSON.stringify(mode)}`);
 }
 
 function recordJson(markdown: string): { json: string } | { problem: string } {
@@ -217,7 +265,11 @@ function describe(finding: Finding): string {
 	return `${finding.finding_id} (${finding.risk_level}) ${finding.name}${where}`;
 }
 
-function decide(record: ScanRecord, threshold: Threshold): { blocking: string[]; overrides: string[] } {
+function decide(
+	record: ScanRecord,
+	threshold: Threshold,
+	mode: OverrideMode,
+): { blocking: string[]; overrides: string[] } {
 	if (record.kind === "not-run") {
 		return {
 			blocking: [
@@ -236,6 +288,14 @@ function decide(record: ScanRecord, threshold: Threshold): { blocking: string[];
 	for (const finding of record.findings) {
 		if (RISK_RANK[finding.risk_level] < RISK_RANK[threshold] || finding.status === "RESOLVED") continue;
 		const label = describe(finding);
+		if (mode === "strict") {
+			blocking.push(
+				finding.override === undefined
+					? `${label} is ${finding.status}. ${ACCEPT_AT_GATE}`
+					: `${label} is ${finding.status}. The gate ignores its override in the record, because the override mode is strict unless the project's ${CONFIG_FILE} sets it to lenient. ${ACCEPT_AT_GATE}`,
+			);
+			continue;
+		}
 		if (finding.override === undefined) {
 			blocking.push(
 				`${label} is ${finding.status}. Fix it and scan again, or record the person's decision to accept the risk.`,
@@ -253,45 +313,48 @@ function decide(record: ScanRecord, threshold: Threshold): { blocking: string[];
 	return { blocking, overrides };
 }
 
-function verdict(threshold: string, blocking: string[], overrides: string[] = []): Verdict {
-	return { pass: blocking.length === 0, findings: blocking, findings_count: blocking.length, threshold, overrides };
-}
-
 // The gate fires this sensor on the record and on the unit's plan. The plan's
 // fire proves a record exists beside it, so a unit that skipped the scan still
 // stops the gate; the record's own fire judges what it says.
-function evaluate(outputPath: string, threshold: string): Verdict {
+function evaluate(outputPath: string, threshold: string, setting: ModeSetting): Verdict {
+	const verdict = (blocking: string[], overrides: string[] = []): Verdict => ({
+		pass: blocking.length === 0,
+		findings: blocking,
+		findings_count: blocking.length,
+		threshold,
+		override_mode: "mode" in setting ? setting.mode : null,
+		overrides,
+	});
 	if (!isThreshold(threshold)) {
-		return verdict(threshold, [
-			`The gate's threshold "${threshold}" is not a risk level. Use one of ${THRESHOLDS.join(", ")}.`,
-		]);
+		return verdict([`The gate's threshold "${threshold}" is not a risk level. Use one of ${THRESHOLDS.join(", ")}.`]);
 	}
+	if ("problem" in setting) return verdict([setting.problem]);
 	const firedOnRecord = basename(outputPath) === RECORD_FILE;
 	const recordPath = firedOnRecord ? outputPath : join(dirname(outputPath), RECORD_FILE);
 	let markdown: string;
 	try {
 		markdown = readFileSync(recordPath, "utf-8");
 	} catch {
-		return verdict(threshold, [
+		return verdict([
 			`No security scan record at ${recordPath}. Code Generation's security step writes it after the code is generated.`,
 		]);
 	}
-	if (!firedOnRecord) return verdict(threshold, []);
+	if (!firedOnRecord) return verdict([]);
 
 	const block = recordJson(markdown);
-	if ("problem" in block) return verdict(threshold, [`${RECORD_FILE}: ${block.problem}.`]);
+	if ("problem" in block) return verdict([`${RECORD_FILE}: ${block.problem}.`]);
 	let raw: unknown;
 	try {
 		raw = JSON.parse(block.json);
 	} catch (error) {
-		return verdict(threshold, [
+		return verdict([
 			`${RECORD_FILE}: its json block is not valid JSON (${error instanceof Error ? error.message : String(error)}).`,
 		]);
 	}
 	const parsed = parseRecord(raw);
-	if ("problems" in parsed) return verdict(threshold, parsed.problems.map((problem) => `${RECORD_FILE}: ${problem}.`));
-	const { blocking, overrides } = decide(parsed.record, threshold);
-	return verdict(threshold, blocking, overrides);
+	if ("problems" in parsed) return verdict(parsed.problems.map((problem) => `${RECORD_FILE}: ${problem}.`));
+	const { blocking, overrides } = decide(parsed.record, threshold, setting.mode);
+	return verdict(blocking, overrides);
 }
 
 function flagValue(argv: string[], flag: string): string | undefined {
@@ -308,7 +371,11 @@ export function main(argv: string[]): void {
 		process.exitCode = 2;
 		return;
 	}
-	const result = evaluate(outputPath, flagValue(argv, "--threshold") ?? DEFAULT_THRESHOLD);
+	const result = evaluate(
+		outputPath,
+		flagValue(argv, "--threshold") ?? DEFAULT_THRESHOLD,
+		readOverrideMode(process.cwd()),
+	);
 	process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

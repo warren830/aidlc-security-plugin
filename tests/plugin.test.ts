@@ -2,11 +2,13 @@
 // the authored root, and each projection built by aidlc-plugin-build composes
 // into a scratch install of that harness, both through aidlc-workflows'
 // plugin-kit and through the shipped aidlc-plugin-test, with no compose drops.
+// The install's own dispatcher then fires the gate check the way the gate
+// does, to prove the check reads the project's override mode on a real fire.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
 
 setDefaultTimeout(900_000);
@@ -61,6 +63,7 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 	describe(`${harness} projection`, () => {
 		let scratch = "";
 		let projection = "";
+		let project = "";
 		let installed = "";
 		let graph: GraphNode[] = [];
 		let dropLogs = "";
@@ -77,7 +80,8 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 				pluginBuilt: projection,
 			});
 			dropLogs = fixture.dropLogs;
-			installed = join(fixture.projectDir, HARNESS_DIR[harness]);
+			project = fixture.projectDir;
+			installed = join(project, HARNESS_DIR[harness]);
 			graph = JSON.parse(readFileSync(join(installed, "tools", "data", "stage-graph.json"), "utf-8")) as GraphNode[];
 		});
 
@@ -109,6 +113,37 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 			expect(stage?.produces).toContain("security-scan-result");
 			expect(stage?.consumes).toContainEqual({ artifact: "security-threat-model", required: false });
 			expect(stage?.requires_stage).toContain("security-threat-model");
+		});
+
+		test("the dispatcher's fire blocks a recorded override without a config, and passes it with a lenient one", () => {
+			const fixtures = join(REPO_ROOT, "tests", "fixtures");
+			const record = join(project, "aidlc-docs", "construction", "unit-a", "code-generation", "security-scan-result.md");
+			mkdirSync(dirname(record), { recursive: true });
+			copyFileSync(join(fixtures, "scan-records", "override-accepted", "security-scan-result.md"), record);
+			const fire = (): string => {
+				const run = spawnSync(
+					process.execPath,
+					[
+						join(installed, "tools", "aidlc-sensor.ts"),
+						"fire",
+						"security-findings-gate",
+						"--stage",
+						"code-generation",
+						"--output-path",
+						record,
+					],
+					{
+						cwd: project,
+						encoding: "utf-8",
+						env: { ...process.env, AIDLC_PROJECT_DIR: project, CLAUDE_PROJECT_DIR: project },
+					},
+				);
+				expect(run.status, `${run.stdout}${run.stderr}`).toBe(0);
+				return (JSON.parse(run.stdout) as { result: string }).result;
+			};
+			expect(fire()).toBe("failed");
+			copyFileSync(join(fixtures, "projects", "lenient", ".aidlc-security.json"), join(project, ".aidlc-security.json"));
+			expect(fire()).toBe("passed");
 		});
 
 		test("gives the core DevSecOps agent the security baseline and the AWS Security Agent guidance", () => {

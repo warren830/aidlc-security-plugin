@@ -41,9 +41,13 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
   threat model stage in Inception, the gate check on Code Generation, and the
   baseline and persona fragments on the DevSecOps agent;
 - the shipped `aidlc-plugin-test` passes against a scratch install;
+- the composed install's own dispatcher fires the gate check on an accepted
+  finding, and the check blocks it without `.aidlc-security.json` and passes
+  it with a lenient one;
 - the gate check's verdict for every committed record in
   `tests/fixtures/scan-records/`, through the worker as a subprocess and
-  through `main(argv)`.
+  through `main(argv)`, in the override modes that the project folders in
+  `tests/fixtures/projects/` set.
 
 The tests make no AWS call: the gate check reads only files, and nothing
 starts the MCP server.
