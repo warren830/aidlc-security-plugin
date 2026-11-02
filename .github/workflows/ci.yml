@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, lint, validate, build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIDLC_WORKFLOWS_DIR: ${{ github.workspace }}/aidlc-workflows
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: plugin
+          persist-credentials: false
+
+      # The plugin authoring tools and plugin-kit ship in this checkout, at the
+      # commit the plugin is tested against. Move the pin with README.md.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: awslabs/aidlc-workflows
+          ref: cc22ef5564b159553057962ea874d4e1b855ccad
+          path: aidlc-workflows
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+
+      - name: Build aidlc-workflows
+        working-directory: aidlc-workflows
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/package.ts
+
+      - name: Install
+        working-directory: plugin
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: plugin
+        run: bun run typecheck
+
+      - name: Lint
+        working-directory: plugin
+        run: bun run lint
+
+      - name: Validate
+        working-directory: plugin
+        run: bun run validate
+
+      - name: Build for Claude Code
+        working-directory: plugin
+        run: bun run build:claude
+
+      - name: Build for Kiro IDE
+        working-directory: plugin
+        run: bun run build:kiro-ide
+
+      - name: Test
+        working-directory: plugin
+        run: bun run test
