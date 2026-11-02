@@ -1,0 +1,15 @@
+{
+  "name": "security",
+  "version": "0.1.0",
+  "description": "AWS Security Agent in the AI-DLC workflow: a threat model of the approved Inception design, and a diff scan with a blocking findings gate on Code Generation.",
+  "author": {
+    "name": "warren830"
+  },
+  "dependencies": [
+    "core"
+  ],
+  "aidlc": {
+    "marketplace": "security-aidlc-plugins",
+    "contributes": {}
+  }
+}
