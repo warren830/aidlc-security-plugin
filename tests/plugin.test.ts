@@ -1,0 +1,94 @@
+// The security plugin's content and composition: the shipped validator accepts
+// the authored root, and each projection built by aidlc-plugin-build composes
+// into a scratch install of that harness, both through aidlc-workflows'
+// plugin-kit and through the shipped aidlc-plugin-test, with no compose drops.
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
+
+setDefaultTimeout(900_000);
+
+type Harness = "claude" | "kiro-ide";
+
+interface PluginKit {
+	validatePluginContent(pluginRoot: string): unknown[];
+	copyHarnessInstall(harness: Harness, projectDir: string): string;
+	composePluginFixture(options: {
+		plugin: string;
+		harness: Harness;
+		projectDir: string;
+		pluginBuilt: string;
+	}): { projectDir: string; dropLogs: string };
+}
+
+interface GraphNode {
+	slug: string;
+	phase: string;
+	lead_agent: string;
+	scopes?: string[];
+}
+
+const kit = (await import(join(upstreamDir(), "tests", "harness", "plugin-kit.ts"))) as PluginKit;
+
+const HARNESS_DIR: Record<Harness, string> = { claude: ".claude", "kiro-ide": ".kiro" };
+
+function pluginTool(...args: string[]): ReturnType<typeof spawnSync> {
+	return spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "plugin-tool.ts"), ...args], {
+		cwd: REPO_ROOT,
+		encoding: "utf-8",
+	});
+}
+
+test("the shipped validator accepts the authored plugin root", () => {
+	expect(kit.validatePluginContent(PLUGIN_ROOT)).toEqual([]);
+});
+
+for (const harness of ["claude", "kiro-ide"] as const) {
+	describe(`${harness} projection`, () => {
+		let scratch = "";
+		let projection = "";
+		let graph: GraphNode[] = [];
+		let dropLogs = "";
+
+		beforeAll(() => {
+			scratch = mkdtempSync(join(tmpdir(), `security-plugin-${harness}-`));
+			projection = join(scratch, "projection");
+			const build = pluginTool("build", PLUGIN_ROOT, harness, projection);
+			if (build.status !== 0) throw new Error(`build failed: ${build.stderr}${build.stdout}`);
+			const fixture = kit.composePluginFixture({
+				plugin: "security",
+				harness,
+				projectDir: join(scratch, "composed"),
+				pluginBuilt: projection,
+			});
+			dropLogs = fixture.dropLogs;
+			graph = JSON.parse(
+				readFileSync(join(fixture.projectDir, HARNESS_DIR[harness], "tools", "data", "stage-graph.json"), "utf-8"),
+			) as GraphNode[];
+		});
+
+		afterAll(() => {
+			if (scratch) rmSync(scratch, { recursive: true, force: true });
+		});
+
+		test("composes with an empty drop log", () => {
+			expect(dropLogs).toBe("");
+		});
+
+		test("puts the threat model in Inception, led by the core DevSecOps agent", () => {
+			const stage = graph.find((node) => node.slug === "security-threat-model");
+			expect(stage?.phase).toBe("inception");
+			expect(stage?.lead_agent).toBe("aidlc-devsecops-agent");
+			expect(stage?.scopes).toEqual(["enterprise", "feature", "mvp", "classic", "workshop"]);
+		});
+
+		test("passes the shipped aidlc-plugin-test against a scratch install", () => {
+			const install = kit.copyHarnessInstall(harness, join(scratch, "install"));
+			const run = pluginTool("test", PLUGIN_ROOT, "--install", install, "--harness", harness);
+			expect(run.status, `${run.stdout}${run.stderr}`).toBe(0);
+		});
+	});
+}
