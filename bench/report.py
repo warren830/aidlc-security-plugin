@@ -223,7 +223,8 @@ def markdown(rows: list[Row], summary: list[dict], estimate: list[dict], source:
     leaderboard = LEADERBOARD_COST_PER_TASK * SUSVIBES_TASKS * SUSVIBES_RUNS * ARMS
     parts = [
         "# Benchmark report\n",
-        f"{len(rows)} task runs. Costs are Claude Code's own estimates in USD (total_cost_usd); times are wall seconds.\n",
+        f"{len(rows)} task runs. Costs are Claude Code's own estimates in USD (total_cost_usd). "
+        "Times are the agent step's wall seconds, without the image build and the setup.\n",
         "## Per arm\n",
         table(summary, arm_columns),
         f"\n`over_stop_threshold` is a timeout rate above {STOP_TIMEOUT_RATE:.0%}, the design's stop condition.\n",
