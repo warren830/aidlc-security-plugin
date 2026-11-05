@@ -301,8 +301,8 @@ HOME, `sudo` blocked):
 - arm1 setup, a two-file task: `completed` in 26 s for $0.15.
 - arm2 setup, scope `classic`, a two-endpoint greenfield service: the
   protocol held for 105 minutes over two sessions. The driver answered 8
-  stage and plan approvals, a verification command and 17 content questions,
-  sent 13 prose replies, and the run never stalled. AI-DLC accepted the
+  stage and plan approvals, a verification command and 13 content questions,
+  sent 10 prose replies, and the run never stalled. AI-DLC accepted the
   free-text reply for every content question, including the answer-mode
   question. The run cost $26.36 and had reached Code Generation's walking
   skeleton, 10 of 17 stages, when it stopped at the time limit. A full
