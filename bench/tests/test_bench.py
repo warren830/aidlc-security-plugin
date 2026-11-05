@@ -9,6 +9,8 @@ import pytest
 import bench
 import pins as pinfile
 from arms import ARMS
+from baxbench import runner
+from conftest import TESTS
 
 PINS = pinfile.load()
 
@@ -78,3 +80,30 @@ def test_arm3_stops_before_any_container_without_the_security_agent_setup(tmp_pa
     (work.assets / "security-agent").mkdir(parents=True)
     (work.assets / "security-agent" / "config.json").write_text("{}")
     bench.preflight(ARMS["arm3"], work)
+
+
+def test_the_baxbench_command_runs_each_task_then_both_baxbench_modes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    work = bench.Work(tmp_path / "work")
+    work.root.mkdir()
+    pinfile.write_json(work.setup_manifest, {"commits": {"baxbench": "c"}, "assets": {"arch": "x64"}})
+    export = json.loads((TESTS / "baxbench_export_sample.json").read_text())
+    work.baxbench_tasks.write_text(json.dumps(export))
+    wanted = tmp_path / "tasks.json"
+    wanted.write_text(json.dumps({"tasks": [{"scenario": t["scenario"], "env": t["env"]} for t in export["tasks"]]}))
+    work.baxbench.mkdir(parents=True)
+    calls = tmp_path / "baxbench-calls.jsonl"
+    fake_python = tmp_path / "python"
+    fake_python.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {calls}\n")
+    fake_python.chmod(0o755)
+    monkeypatch.setattr(bench.Work, "baxbench_python", property(lambda self: fake_python))
+    ran = []
+    monkeypatch.setattr(runner, "run_task", lambda ctx, task: ran.append((ctx.arm.label, task.name)) or {"arm": ctx.arm.label})
+
+    bench.baxbench(work, PINS, ARMS["arm1"], str(wanted), workers=2, force=False)
+
+    assert sorted(ran) == sorted(("arm1", f"{t['scenario']}/{t['env']}") for t in export["tasks"])
+    lines = calls.read_text().splitlines()
+    assert [line.split("--mode ")[1].split()[0] for line in lines] == ["test"] * 4 + ["evaluate"] * 4
+    manifest = json.loads((work.runs / "baxbench/results/arm1/manifest.json").read_text())
+    assert manifest["arm"] == "arm1" and manifest["ended"] and manifest["pins"] == PINS
+    assert (work.runs / "baxbench/results/arm1/setup-arm1.sh").read_text() == ARMS["arm1"].setup_script()
