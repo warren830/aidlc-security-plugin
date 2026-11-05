@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from claude_agent_sdk import ResultMessage
 
-# summary.json usage key -> modelUsage key -> per-turn usage key (the same)
+# summary.json (and per-turn usage) key -> modelUsage key
 TOKEN_KEYS = {
     "input_tokens": "inputTokens",
     "output_tokens": "outputTokens",
