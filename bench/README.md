@@ -294,6 +294,20 @@ Verified offline on an arm64 host (no model call, no AWS call):
   and the Security Agent tools without `setup` and `call_api`, and AI-DLC's
   hooks ran.
 
+With a real model, on the host, without containers (2026-11-05, local
+transport, Claude Code 2.1.318, Claude Sonnet 4.5 on Bedrock, a scratch
+HOME, `sudo` blocked):
+
+- arm1 setup, a two-file task: `completed` in 26 s for $0.15.
+- arm2 setup, scope `classic`, a two-endpoint greenfield service: the
+  protocol held for 105 minutes over two sessions. The driver answered 8
+  stage and plan approvals, a verification command and 17 content questions,
+  sent 13 prose replies, and the run never stalled. AI-DLC accepted the
+  free-text reply for every content question, including the answer-mode
+  question. The run cost $26.36 and had reached Code Generation's walking
+  skeleton, 10 of 17 stages, when it stopped at the time limit. A full
+  classic run on a real task will cost and take more than that.
+
 Mock only:
 
 - The BaxBench runner's container steps, against a recording fake `docker`
