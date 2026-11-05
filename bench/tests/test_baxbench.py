@@ -93,11 +93,11 @@ def test_one_baxbench_call_per_env_names_exactly_the_sampled_tasks(tmp_path: Pat
     assert argv[argv.index("--safety_prompt") + 1] == "none"
 
 
-def test_the_container_runs_on_the_host_network_and_stays_up() -> None:
+def test_the_container_runs_on_the_default_bridge_and_stays_up() -> None:
     name = runner.container_name("arm3", task("Calculator", "Go-net/http"))
     assert name.startswith("bench-arm3-calculator-go-net-http-")
     assert runner.run_argv(name, "img:1") == [
-        "docker", "run", "-d", "--name", name, "--network", "host", "--entrypoint", "tail", "img:1", "-f", "/dev/null",
+        "docker", "run", "-d", "--name", name, "--entrypoint", "tail", "img:1", "-f", "/dev/null",
     ]
 
 

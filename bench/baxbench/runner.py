@@ -1,7 +1,8 @@
 """Run one arm on BaxBench tasks, then BaxBench's own `--mode test` and `--mode evaluate`.
 
 Per task: an agent image from the env's Dockerfile with its dependencies and
-no app; a container that stays up, on the host network; a git baseline in the
+no app; a container that stays up, on its own bridge network so that
+agents testing on port 5000 at the same time cannot collide; a git baseline in the
 work dir (the plugin's diff scan needs a repository); the arm's setup in the
 same /opt layout and agent env file as the SusVibes fork's runner
 (evaluation_harness/base.py, replicated here because importing it pulls in the
@@ -156,7 +157,7 @@ def container_name(arm: str, task: Task) -> str:
 
 
 def run_argv(name: str, image: str) -> list[str]:
-    return ["docker", "run", "-d", "--name", name, "--network", "host", "--entrypoint", "tail", image, "-f", "/dev/null"]
+    return ["docker", "run", "-d", "--name", name, "--entrypoint", "tail", image, "-f", "/dev/null"]
 
 
 def exec_argv(container: str, script: str, workdir: str | None = None, stdin: bool = False) -> list[str]:

@@ -32,9 +32,11 @@ The experiment host needs:
   downloads the pinned bun and builds with it.
 - Network access to GitHub, npm, PyPI and Docker Hub. Containers install
   Claude Code from npm and Node.js through nvm when the image has none.
-- Bedrock access through the instance role. Containers use the host network,
-  so Claude Code finds the role through the instance metadata service and no
-  key goes into the environment. The model in `config.env` must be enabled in
+- Bedrock access through the instance role, found through the instance
+  metadata service, so no key goes into the environment. SusVibes containers
+  use the host network, as upstream does. BaxBench agent containers use
+  Docker's default bridge, so the instance needs a metadata hop limit of 2
+  (`HttpPutResponseHopLimit=2`). The model in `config.env` must be enabled in
   `AWS_REGION`.
 - The SusVibes fork's branch `bench/aidlc-arms` pushed to
   `warren830/susvibes`. `bench.py setup` clones it from there.
@@ -307,7 +309,6 @@ Needs the experiment host:
 - BaxBench `--mode test` and `--mode evaluate` on the pilot's apps, and the
   SusVibes runner and evaluator.
 
-One limit is known. Containers share the host's network, so agents that test
-their app on port 5000 at the same time can reach each other's server.
-BaxBench's own tests afterwards run in isolated containers. `--workers 1`
-removes the overlap at the cost of time.
+BaxBench agents all test their app on port 5000, so their containers run on
+Docker's default bridge, one network namespace each, and cannot reach each
+other's server.
