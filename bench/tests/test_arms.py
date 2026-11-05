@@ -42,3 +42,20 @@ def test_arm2_and_arm3_differ_only_in_the_plugin_setup() -> None:
     assert ARMS["arm2"].setup_parts == (*ARMS["arm1"].setup_parts, "aidlc.sh")
     assert ARMS["arm1"].first_message_template("brownfield") == "{prompt}"
     assert ARMS["arm2"].first_message_template("brownfield") == "/aidlc --scope classic --project-type brownfield {prompt}"
+
+
+def test_arm3_gets_the_security_agent_setup_for_its_region_only(tmp_path: Path) -> None:
+    import json
+
+    import build_assets
+
+    source = tmp_path / "config.json"
+    source.write_text(json.dumps({
+        "ap-southeast-1": {"agent_space_id": "as-1", "service_role": "arn:role", "s3_bucket": "b", "code_reviews": {"/w": "cr-1"}},
+        "us-east-1": {"agent_space_id": "as-2"},
+    }))
+    assert build_assets.security_agent_config(source, "ap-southeast-1") == {
+        "ap-southeast-1": {"agent_space_id": "as-1", "service_role": "arn:role", "s3_bucket": "b"}
+    }
+    assert build_assets.security_agent_config(source, "eu-west-1") is None
+    assert build_assets.security_agent_config(tmp_path / "missing.json", "ap-southeast-1") is None

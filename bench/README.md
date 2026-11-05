@@ -39,12 +39,17 @@ The experiment host needs:
 - The SusVibes fork's branch `bench/aidlc-arms` pushed to
   `warren830/susvibes`. `bench.py setup` clones it from there.
 
-Before arm3 runs, a person sets up AWS Security Agent once, by hand, as the
-plugin's README describes: the `setup` that creates the IAM role
-`SecurityAgentScanRole` and the agent space, then one threat model review and
-one diff scan, so that both S3 buckets exist. The instance role needs the
+Before arm3 runs, a person sets up AWS Security Agent once, by hand, on the
+experiment host, as the plugin's README describes. In a Claude Code session
+with the `security-agent` MCP server in ap-southeast-1, they run the server's
+`setup`, which creates the IAM role `SecurityAgentScanRole` and an agent
+space, then one threat model review and one diff scan, so that both S3
+buckets exist. The server keeps that setup in `~/.securityagent/config.json`
+(`SECURITY_AGENT_CONFIG`). `bench.py setup` copies it into the assets without
+its per-folder review ids, and every arm3 container starts with it. Without
+it, arm3 stops before any container starts. The instance role needs the
 Security Agent permissions in ap-southeast-1. No run may create AWS
-resources, so every run disallows the MCP server's `setup` and its `call_api`,
+resources, so every run disallows the server's `setup` and its `call_api`,
 which reaches every service operation, including billed pentests.
 
 ## Run the experiment
@@ -253,8 +258,14 @@ Paths under `aidlc-workflows` are at tag v2.11.3. Paths under the SDK are in
   MCP server), so no project `.mcp.json` waits for an approval. The setup
   installs the pinned server with `uv tool install` and registers its
   executable, so its first start reads from disk instead of resolving with
-  `uvx`. `AWS_REGION=ap-southeast-1` is set on the server; `AWS_PROFILE` only
-  when set during setup.
+  `uvx`. The server gets `AWS_REGION=ap-southeast-1` and
+  `WORKSPACE_ROOT=<project dir>`, and `AWS_PROFILE` only when it is set during
+  setup.
+- **The person's Security Agent setup reaches each container.** The server
+  reads its agent space, role and bucket names from
+  `~/.securityagent/config.json`, keyed by region (`state.py` in the server).
+  A fresh container has none, so `setup_check` would report the account as
+  not set up and the agent could only ask for the setup that no run may do.
 - **Claude Code stays at its version.** `/root/.claude_env` sets
   `DISABLE_AUTOUPDATER=1` for every arm.
 - **BaxBench agent image.** The env's own Dockerfile with BaxBench's RUN lines
@@ -272,12 +283,14 @@ Verified offline on an arm64 host (no model call, no AWS call):
   a local fake Messages API in place of the model
   (`tests/test_driver_real_cli.py`).
 - `build_assets.py` and `bench.py setup`, with the network.
-- The arm3 setup bundle, as a non-root user with a scratch HOME: Claude Code
-  2.1.318 from npm, AI-DLC 2.11.3 from the release files, `aidlc doctor`
-  with 0 problems, the plugin composed and enabled (`plugin list` says
-  `current`), the MCP server connected; a second run converged. With that
-  install, the real CLI listed the plugin, the aidlc skill and the Security
-  Agent tools without `setup` and `call_api`, and AI-DLC's hooks ran.
+- The arm3 setup bundle, as a non-root user with a scratch HOME and a
+  stand-in Security Agent setup file: Claude Code 2.1.318 from npm, AI-DLC
+  2.11.3 from the release files, `aidlc doctor` with 0 problems, the plugin
+  composed and enabled (`plugin list` says `current`), the MCP server
+  connected; a second run converged, and a run without the setup file
+  stopped. With that install, the real CLI listed the plugin, the aidlc skill
+  and the Security Agent tools without `setup` and `call_api`, and AI-DLC's
+  hooks ran.
 
 Mock only:
 

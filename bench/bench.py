@@ -127,6 +127,15 @@ def ready(work: Work) -> dict:
     return pinfile.read_json(work.setup_manifest)
 
 
+def preflight(arm: Arm, work: Work) -> None:
+    """Stop before any container starts when arm 3 would stop in each one."""
+    if "security.sh" in arm.setup_parts and not (work.assets / build_assets.AGENT_CONFIG).exists():
+        raise SystemExit(
+            f"{work.assets / build_assets.AGENT_CONFIG} is missing: do the one-time Security Agent setup "
+            "(bench/README.md, Before you start), then run `bench.py setup` again"
+        )
+
+
 def run_manifest(path: Path, setup_manifest: dict, pins: dict[str, str], **details: object) -> dict:
     manifest = {
         "started": pinfile.now(),
@@ -147,6 +156,7 @@ def finish_manifest(path: Path, manifest: dict) -> None:
 
 def baxbench(work: Work, pins: dict[str, str], arm: Arm, tasks_choice: str, workers: int, force: bool) -> None:
     setup_manifest = ready(work)
+    preflight(arm, work)
     if tasks_choice == "pilot":
         wanted = json.loads(PILOT.read_text(encoding="utf-8"))["tasks"]
     elif tasks_choice == "all":
@@ -218,6 +228,7 @@ def predictions(run_dir: Path) -> list[dict]:
 
 def susvibes(work: Work, pins: dict[str, str], arm: Arm, run_number: int, workers: int) -> None:
     setup_manifest = ready(work)
+    preflight(arm, work)
     label = f"{arm.label}-run{run_number}"
     run_dir = work.runs / "susvibes" / label
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import shutil
@@ -30,6 +31,7 @@ import pins as pinfile
 
 MARKETPLACE_DIR = "security-plugin"
 RELEASE_DIR = "aidlc-release"
+AGENT_CONFIG = "security-agent/config.json"
 CONTAINER_PINS = ("AIDLC_VERSION", "SECURITY_AGENT_MCP", "SECURITY_AGENT_REGION")
 
 
@@ -167,6 +169,22 @@ def bun_env(bun_bin: Path) -> dict[str, str]:
     return {**os.environ, "PATH": f"{bun_bin.parent}:{os.environ.get('PATH', '')}"}
 
 
+def security_agent_config(source: Path, region: str) -> dict | None:
+    """The MCP server's setup for one region, without the per-workspace review ids.
+
+    The server keeps its agent space, role and bucket names per region in
+    ~/.securityagent/config.json (state.py in the server). Without them in the
+    container, setup_check reports the account as not set up, and arm 3 could
+    only ask for the setup no run may do.
+    """
+    if not source.exists():
+        return None
+    setup = json.loads(source.read_text(encoding="utf-8")).get(region)
+    if not setup:
+        return None
+    return {region: {key: value for key, value in setup.items() if key != "code_reviews"}}
+
+
 def build(out: Path, work: Path, pins: dict[str, str]) -> dict:
     arch = host_arch()
     downloads = work / "downloads"
@@ -187,6 +205,12 @@ def build(out: Path, work: Path, pins: dict[str, str]) -> dict:
     for tool in ("uv", "uvx"):
         shutil.copy2(uv_dir / tool, staging / "bin" / tool)
     (staging / "pins.env").write_text("".join(f"{key}={pins[key]}\n" for key in CONTAINER_PINS), encoding="utf-8")
+    agent_config = security_agent_config(Path(pins["SECURITY_AGENT_CONFIG"]).expanduser(), pins["SECURITY_AGENT_REGION"])
+    if agent_config is None:
+        print("build-assets: no Security Agent setup found; arm 3 setup will stop until it exists", file=sys.stderr)
+    else:
+        (staging / AGENT_CONFIG).parent.mkdir()
+        (staging / AGENT_CONFIG).write_text(json.dumps(agent_config, indent=2) + "\n", encoding="utf-8")
     manifest = {
         "built_at": pinfile.now(),
         "host": pinfile.host(),
@@ -198,6 +222,7 @@ def build(out: Path, work: Path, pins: dict[str, str]) -> dict:
         "uv": {"version": pins["UV_VERSION"], "asset": f"uv-{arch.uv}.tar.gz", "sha256": uv_sha},
         "security_agent_mcp": pins["SECURITY_AGENT_MCP"],
         "security_agent_region": pins["SECURITY_AGENT_REGION"],
+        "security_agent_setup": sorted(agent_config[pins["SECURITY_AGENT_REGION"]]) if agent_config else None,
     }
     pinfile.write_json(staging / "manifest.json", manifest)
     if out.exists():

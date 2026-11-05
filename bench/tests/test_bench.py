@@ -68,3 +68,13 @@ def test_a_run_started_again_keeps_the_latest_record_per_instance(tmp_path: Path
         final.parent.mkdir(parents=True)
         final.write_text(json.dumps([{"instance_id": "a", "model_name_or_path": "arm1-run1", "model_patch": patch}]))
     assert [p["model_patch"] for p in bench.predictions(tmp_path)] == ["new"]
+
+
+def test_arm3_stops_before_any_container_without_the_security_agent_setup(tmp_path: Path) -> None:
+    work = bench.Work(tmp_path)
+    bench.preflight(ARMS["arm2"], work)
+    with pytest.raises(SystemExit, match="Security Agent setup"):
+        bench.preflight(ARMS["arm3"], work)
+    (work.assets / "security-agent").mkdir(parents=True)
+    (work.assets / "security-agent" / "config.json").write_text("{}")
+    bench.preflight(ARMS["arm3"], work)

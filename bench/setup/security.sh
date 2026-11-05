@@ -4,6 +4,15 @@
 . "$BENCH_ASSETS/pins.env"
 project="${BENCH_PROJECT_DIR:-/project}"
 
+agent_setup="$BENCH_ASSETS/security-agent/config.json"
+if [ ! -s "$agent_setup" ]; then
+  echo "The assets hold no Security Agent setup: do the one-time setup, then run bench.py setup again." >&2
+  exit 1
+fi
+# The MCP server reads its agent space, role and buckets from here.
+install -d -m 700 "$HOME/.securityagent"
+install -m 600 "$agent_setup" "$HOME/.securityagent/config.json"
+
 mkdir -p "$HOME/.local/bin"
 install -m 755 "$BENCH_ASSETS/bin/bun" "$BENCH_ASSETS/bin/uv" "$BENCH_ASSETS/bin/uvx" "$HOME/.local/bin/"
 # Installed now, the server starts from disk when Claude Code launches it.
@@ -22,8 +31,9 @@ printf '{"override_mode":"strict"}\n' > .aidlc-security.json
 
 # Local scope keeps the server in this container's ~/.claude.json, so no
 # project .mcp.json waits for an approval nobody gives. AWS_REGION here wins
-# over the Bedrock region the server would inherit from Claude Code.
-mcp_env=(-e "AWS_REGION=$SECURITY_AGENT_REGION")
+# over the Bedrock region the server would inherit from Claude Code, and
+# WORKSPACE_ROOT lets it upload the project and nothing outside it.
+mcp_env=(-e "AWS_REGION=$SECURITY_AGENT_REGION" -e "WORKSPACE_ROOT=$project")
 if [ -n "${AWS_PROFILE:-}" ]; then
   mcp_env+=(-e "AWS_PROFILE=$AWS_PROFILE")
 fi
