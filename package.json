@@ -10,7 +10,9 @@
     "build:kiro-ide": "bun scripts/plugin-tool.ts build security kiro-ide",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check --error-on-warnings .",
-    "test": "bun test tests"
+    "test": "bun test tests",
+    "replay": "bun replay/run.ts",
+    "replay:check": "bun replay/run.ts --check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "example-data": {
+      "command": "uvx",
+      "args": ["example-data-mcp-server@1.0.0"],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "AKIAEXAMPLEFAKEKEYZZ",
+        "AWS_SECRET_ACCESS_KEY": "EXAMPLEfakeSECRETnotAREALkeyEXAMPLEfake0",
+        "AWS_REGION": "ap-southeast-1"
+      }
+    }
+  }
+}

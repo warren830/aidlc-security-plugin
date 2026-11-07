@@ -6,6 +6,10 @@ AWS Security Agent for [AI-DLC](https://github.com/awslabs/aidlc-workflows).
   model of the approved design in Inception, and a diff scan with a blocking
   findings gate on Code Generation. Its README covers installation, the MCP
   server setup, what runs in your AWS account, and the gate's rules.
+- [`replay/`](replay/README.md) is a validation suite: minimal scenarios, where
+  each should be detected, and what the current implementation detects.
+  `bun run replay` writes its [`REPORT.md`](replay/REPORT.md), and CI runs
+  `bun run replay:check`.
 - A GitHub Action will also live in this repository. It is separate work and
   is not here yet.
 
