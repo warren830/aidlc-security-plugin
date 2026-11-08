@@ -21,6 +21,7 @@
 | `files` | `repo/` 下承载场景的文件，相对 `repo/` |
 | `record` | 录制样本的文件名，没有就不写 |
 | `gap_owner` | `expected` 是 `not-detected` 时必填：`plugin` 或 `action`（AWS-9） |
+| `aws_run` | 可选。对真实 AWS Security Agent 跑过的结果：`result`（`detected` 或 `not-detected`）、`at`、`region`、`code_review_job_id`、`findings`。CI 不重跑它，它也不改变 `expected` |
 
 ## 结果怎么算
 
@@ -32,6 +33,9 @@ runner 对每个用例做两件事：
    但扫描本身要调用 Security Agent。
 
 两步都没检测到，结果就是 `not-detected`。
+
+`expected` 只描述离线能测出的结果，所以要调用 Security Agent 的用例在 CI 里永远是
+`needs-aws`。真实扫描跑过以后，结果写进 `aws_run`，报告里单列「AWS 实测」一栏。
 
 结果和 `expected` 不一致时，`run.ts` 失败。缺口不能靠改报告藏起来；补上缺口以后，
 也要同时改 `expected.md`。

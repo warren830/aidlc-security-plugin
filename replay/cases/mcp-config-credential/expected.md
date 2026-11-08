@@ -17,6 +17,15 @@
 ACTIVE 的 CRITICAL finding，门禁应该拦下。没有任何 security 类 sensor 检查
 `.mcp.json`，插件和本仓库的 CI 都没有 secret 扫描。
 
+AWS 实测：检测到。2026-11-08 在 us-east-1 的 agent space `aidlc-bench` 上，对和 `repo/`
+完全相同的文件跑了一次 code review（job `cj-50af3609-3fc2-4683-bddd-50929883d8d8`）。
+它报出 finding `f-67467dad-d58a-4348-857e-4718d42cd0ed`：`DEFAULT_CREDENTIALS`，HIGH，置信度 HIGH，
+ACTIVE，位置 `.mcp.json:7-8`，就是那对假密钥。真实等级是 HIGH，录制样本写的是 CRITICAL；门禁在 HIGH
+就拦，所以结论不变。同一次扫描还报了 3 条：`uvx` 每次启动都拉取没固定校验的远程包并把密钥交给它
+（`CODE_INJECTION`，HIGH）、MCP 注册没有最小权限（`PRIVILEGE_ESCALATION`，HIGH）、没有审计日志（LOW）。
+这次是直接调用 `securityagent` API 跑的整库 code review，没有经过插件 Step 4b 的 MCP diff scan，
+也不在插件默认的 ap-southeast-1。
+
 ## 证据
 
 `bun replay/run.ts --check` 对 `repo/.mcp.json` 跑了所有覆盖它的 security 类 sensor，
@@ -30,6 +39,13 @@ ACTIVE 的 CRITICAL finding，门禁应该拦下。没有任何 security 类 sen
   "expected": "needs-aws",
   "sources": ["https://blog.gitguardian.com/the-state-of-secrets-sprawl-2026/"],
   "files": [".mcp.json"],
-  "record": "security-scan-result.md"
+  "record": "security-scan-result.md",
+  "aws_run": {
+    "result": "detected",
+    "at": "2026-11-08",
+    "region": "us-east-1",
+    "code_review_job_id": "cj-50af3609-3fc2-4683-bddd-50929883d8d8",
+    "findings": ["DEFAULT_CREDENTIALS HIGH at .mcp.json:7-8 (f-67467dad-d58a-4348-857e-4718d42cd0ed)"]
+  }
 }
 ```

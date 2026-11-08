@@ -23,6 +23,18 @@ const GAP_OWNERS = { plugin: "插件", action: "AWS-9 Action" } as const;
 type Stage = keyof typeof STAGES;
 type Result = keyof typeof RESULTS;
 type GapOwner = keyof typeof GAP_OWNERS;
+const AWS_RESULTS = { detected: "检测到", "not-detected": "未检测到" } as const;
+
+// A scan someone ran against the real AWS Security Agent on this case's repo/.
+// CI cannot repeat it, so it never decides the measured result; the report
+// shows it beside that result, with the job and findings to look it up by.
+interface AwsRun {
+	result: keyof typeof AWS_RESULTS;
+	at: string;
+	region: string;
+	code_review_job_id: string;
+	findings: string[];
+}
 
 interface Case {
 	id: string;
@@ -33,6 +45,7 @@ interface Case {
 	files: string[];
 	record?: string;
 	gap_owner?: GapOwner;
+	aws_run?: AwsRun;
 }
 
 interface Sensor {
@@ -101,6 +114,16 @@ function readCase(id: string): Case {
 	if (spec.expected === "not-detected" && !((spec.gap_owner ?? "") in GAP_OWNERS)) {
 		problems.push(`a not-detected case names its gap_owner: ${Object.keys(GAP_OWNERS).join(" or ")}`);
 	}
+	const run = spec.aws_run;
+	if (run !== undefined) {
+		if (!(run.result in AWS_RESULTS)) {
+			problems.push(`aws_run.result "${run.result}" is not one of ${Object.keys(AWS_RESULTS).join(", ")}`);
+		}
+		if (!run.at || !run.region || !run.code_review_job_id) {
+			problems.push("aws_run names its at, region and code_review_job_id");
+		}
+		if (run.result === "detected" && !run.findings?.length) problems.push("a detected aws_run lists its findings");
+	}
 	if (problems.length > 0) throw new Error(`${path}:\n  ${problems.join("\n  ")}`);
 	return spec;
 }
@@ -147,9 +170,15 @@ function cell(text: string): string {
 }
 
 function report(rows: { spec: Case; outcome: Outcome }[]): string {
+	const awsRun = ({ aws_run: run }: Case) =>
+		run === undefined
+			? "未跑"
+			: `${AWS_RESULTS[run.result]}（${run.at}，${run.region}，\`${run.code_review_job_id}\`${
+					run.findings?.length ? `：${run.findings.join("；")}` : ""
+				}）`;
 	const table = rows.map(
 		({ spec, outcome }) =>
-			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${RESULTS[outcome.result]} | ${cell(outcome.evidence.join("；"))} |`,
+			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${RESULTS[outcome.result]} | ${cell(awsRun(spec))} | ${cell(outcome.evidence.join("；"))} |`,
 	);
 	const gaps = rows
 		.filter(({ outcome }) => outcome.result === "not-detected")
@@ -161,11 +190,12 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 		"# 验证测试套件报告",
 		"",
 		"由 `bun replay/run.ts` 生成，不要手改。用例和预期见 `replay/cases/*/expected.md`。",
+		"「当前结果」是离线测出的，CI 每次重测；「AWS 实测」是对真实 AWS Security Agent 跑过的记录，CI 不重跑。",
 		"",
 		`共 ${rows.length} 个用例：${counts}。`,
 		"",
-		"| 测试向量 | 检测环节 | 当前结果 | 证据 |",
-		"| --- | --- | --- | --- |",
+		"| 测试向量 | 检测环节 | 当前结果 | AWS 实测 | 证据 |",
+		"| --- | --- | --- | --- | --- |",
 		...table,
 		"",
 		"## 未检测到",
