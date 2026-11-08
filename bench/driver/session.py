@@ -41,6 +41,7 @@ class Settings:
     disallowed_tools: list[str]
     stuck_after: int
     settle_seconds: float
+    shell_wait_seconds: float
 
 
 class ProbeError(Exception):
@@ -212,6 +213,10 @@ class Session:
         except (ProbeError, OSError, TimeoutError) as error:
             self.error = f"state probe failed: {error}"
             return Finish(Status.ERROR, "probe_failed")
+        if self.workflow.detected and not self.workflow.complete and self.turn.shells:
+            log(f"turn ended with {len(self.turn.shells)} background shell(s) running: waiting for them")
+            self.turn.wait_for_shells(time.monotonic(), self.settings.shell_wait_seconds)
+            return None
         result = self.turn.result
         decision = decide(
             self.workflow,

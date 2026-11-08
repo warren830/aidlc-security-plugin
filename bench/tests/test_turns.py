@@ -128,3 +128,27 @@ def test_resume_starts_a_new_turn() -> None:
     turn.observe(result(), 1)
     turn.resume()
     assert (turn.phase, turn.result) == (Phase.WORKING, None)
+
+
+def test_waiting_for_a_background_shell_ends_when_it_reports() -> None:
+    turn = Turn(settle_seconds=30)
+    turn.observe(started("sleep", task_type="local_bash"), 0)
+    turn.observe(result(), 1)
+    assert turn.phase is Phase.SETTLED and turn.shells == {"sleep"}
+    turn.wait_for_shells(2, 900)
+    turn.tick(600)
+    assert turn.phase is Phase.WAITING_FOR_SHELLS
+    turn.observe(notified("sleep"), 700)
+    assert turn.phase is Phase.SETTLING
+    turn.observe(lead("the review is done"), 701)
+    assert turn.phase is Phase.WORKING
+
+
+def test_a_shell_that_never_reports_is_given_up_on_after_the_wait() -> None:
+    turn = Turn(settle_seconds=30)
+    turn.observe(started("server", task_type="local_bash"), 0)
+    turn.observe(result(), 1)
+    turn.wait_for_shells(2, 900)
+    turn.tick(903)
+    assert turn.phase is Phase.SETTLED
+    assert not turn.shells

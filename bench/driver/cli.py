@@ -13,7 +13,7 @@ from claude_agent_sdk import CanUseToolShadowedWarning
 from driver.decide import STUCK_AFTER, Status
 from driver.session import Session, Settings
 from driver.transport import DockerTransport, LocalTransport, Transport
-from driver.turns import SETTLE_SECONDS
+from driver.turns import SETTLE_SECONDS, SHELL_WAIT_SECONDS
 
 PROMPT_SLOT = "{prompt}"
 # Bypass and unattended switches the pre-registered protocol rules out.
@@ -49,6 +49,12 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--stuck-after", type=int, default=STUCK_AFTER)
     p.add_argument("--settle-seconds", type=float, default=SETTLE_SECONDS)
+    p.add_argument(
+        "--shell-wait-seconds",
+        type=float,
+        default=SHELL_WAIT_SECONDS,
+        help="in an AI-DLC run, how long a settled turn waits for a background shell to wake the agent",
+    )
     return p
 
 
@@ -82,6 +88,7 @@ def settings(args: argparse.Namespace, environ: dict[str, str]) -> Settings:
         disallowed_tools=args.disallowed_tools,
         stuck_after=args.stuck_after,
         settle_seconds=args.settle_seconds,
+        shell_wait_seconds=args.shell_wait_seconds,
     )
 
 

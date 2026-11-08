@@ -178,8 +178,15 @@ def sourced(command: str) -> str:
 
 
 def baseline_script() -> str:
+    """git baseline of the scaffold, after giving its files a current date.
+
+    BaxBench builds its images from a tar with every file dated 1970, and the
+    Security Agent MCP server zips the workspace, which zip cannot do for a
+    date before 1980: arm 3's first upload failed on /app/Dockerfile.
+    """
     ignored = " ".join(BUILD_DIRS_IGNORED)
     return (
+        "find . -xdev ! -newermt 1980-01-02 -exec touch -h -m {} + && "
         f"rm -rf .git && printf '%s\\n' {ignored} >> .gitignore && git init -q && git add -A && "
         "git -c user.name=bench -c user.email=bench@localhost commit -q --allow-empty -m 'BaxBench scaffold'"
     )
