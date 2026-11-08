@@ -80,7 +80,13 @@ class Record:
             self.gates["override_offered_and_refused"] += 1
 
     def summary(
-        self, finish: Finish, wall_seconds: float, usage: Usage, workflow: Workflow, error: str | None
+        self,
+        finish: Finish,
+        wall_seconds: float,
+        usage: Usage,
+        workflow: Workflow,
+        model_refusals: dict,
+        error: str | None,
     ) -> dict:
         return {
             "status": str(finish.status),
@@ -93,6 +99,7 @@ class Record:
             "results": usage.results,
             "gate_stats": {name: self.gates[name] for name in GATE_STATS},
             "permission_denials": dict(self.denials),
+            "model_refusals": model_refusals,
             "aidlc": {
                 "detected": workflow.detected,
                 "completed": workflow.complete,

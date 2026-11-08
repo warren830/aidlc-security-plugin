@@ -25,6 +25,9 @@ ARMS = 3
 # over its 200 public trajectories (attachment experiment-feasibility.md, section 5).
 LEADERBOARD_COST_PER_TASK = 1.16
 STOP_TIMEOUT_RATE = 0.30  # experiment-design.md section 6
+# Tasks per arm that the model's safety systems stopped at least once, whose
+# run ended on a refusal, or where a model other than the pinned one answered.
+REFUSAL_FLAGS = ("stopped_by_model", "ended_on_refusal", "other_model_answered")
 
 
 @dataclass
@@ -48,6 +51,10 @@ class Row:
     free_text: int = 0
     override_offered_and_refused: int = 0
     prose_nudges: int = 0
+    safety_stops: int | None = None
+    stopped_by_model: bool | None = None
+    ended_on_refusal: bool | None = None
+    other_model_answered: bool | None = None
 
 
 def read_json(path: Path) -> dict | list | None:
@@ -59,6 +66,8 @@ def from_summary(benchmark: str, task: str, arm: str, run: int, summary: dict | 
         return Row(benchmark, task, arm, run, "error", func, sec, None, None, None, None, None, None)
     usage = summary.get("usage") or {}
     gates = summary.get("gate_stats") or {}
+    refusals = summary.get("model_refusals")
+    events = (refusals or {}).get("events") or {}
     return Row(
         benchmark, task, arm, run, summary["status"], func, sec,
         summary.get("total_cost_usd"),
@@ -66,6 +75,10 @@ def from_summary(benchmark: str, task: str, arm: str, run: int, summary: dict | 
         usage.get("cache_read_input_tokens"), usage.get("cache_creation_input_tokens"),
         summary.get("wall_seconds"),
         **{gate: gates.get(gate, 0) for gate in GATES},
+        safety_stops=refusals["safety_stops"] if refusals else None,
+        stopped_by_model=refusals["stopped_by_model"] if refusals else None,
+        ended_on_refusal=refusals["ended_on_refusal"] if refusals else None,
+        other_model_answered=bool(events.get("model_refusal_fallback") or events.get("model_fallback")) if refusals else None,
     )
 
 
@@ -153,6 +166,7 @@ def summarize(rows: Iterable[Row]) -> list[dict]:
         entry["func_pass_rate"] = rate([row.func_pass for row in group])
         entry["sec_pass_rate"] = rate([row.sec_pass for row in group])
         entry |= {gate: sum(getattr(row, gate) for row in group) for gate in GATES}
+        entry |= {flag: sum(bool(getattr(row, flag)) for row in group) for flag in REFUSAL_FLAGS}
         summary.append(entry)
     return summary
 
@@ -217,7 +231,7 @@ def markdown(rows: list[Row], summary: list[dict], estimate: list[dict], source:
     arm_columns = [
         "benchmark", "arm", "rows", "completed", "timeout", "stuck", "error", "timeout_rate", "over_stop_threshold",
         "cost_mean", "cost_median", "cost_p90", "cost_total", "wall_mean", "wall_median", "wall_p90",
-        "func_pass_rate", "sec_pass_rate", *GATES,
+        "func_pass_rate", "sec_pass_rate", *GATES, *REFUSAL_FLAGS,
     ]
     budget_columns = ["arm", "tasks", "cost_usd_at_mean", "cost_usd_at_p90", "agent_hours_at_mean", "wall_hours_with_workers"]
     leaderboard = LEADERBOARD_COST_PER_TASK * SUSVIBES_TASKS * SUSVIBES_RUNS * ARMS
@@ -227,7 +241,10 @@ def markdown(rows: list[Row], summary: list[dict], estimate: list[dict], source:
         "Times are the agent step's wall seconds, without the image build and the setup.\n",
         "## Per arm\n",
         table(summary, arm_columns),
-        f"\n`over_stop_threshold` is a timeout rate above {STOP_TIMEOUT_RATE:.0%}, the design's stop condition.\n",
+        f"\n`over_stop_threshold` is a timeout rate above {STOP_TIMEOUT_RATE:.0%}, the design's stop condition. "
+        "`stopped_by_model` counts the tasks the model's safety systems stopped at least once, `ended_on_refusal` "
+        "the tasks whose run ended on a refusal, and `other_model_answered` the tasks where a model other than "
+        "the pinned one answered a call; that last count should be 0.\n",
         f"## SusVibes v1.0 budget estimate, from the {source} pilot\n",
         "Assumption: a SusVibes task costs and takes what a pilot task cost and took in the same arm. "
         f"Each arm runs {SUSVIBES_TASKS} tasks {SUSVIBES_RUNS} times. Wall hours divide agent hours by the worker count.\n",

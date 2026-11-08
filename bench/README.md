@@ -36,8 +36,11 @@ The experiment host needs:
   metadata service, so no key goes into the environment. SusVibes containers
   use the host network, as upstream does. BaxBench agent containers use
   Docker's default bridge, so the instance needs a metadata hop limit of 2
-  (`HttpPutResponseHopLimit=2`). The model in `config.env` must be enabled in
-  `AWS_REGION`.
+  (`HttpPutResponseHopLimit=2`). The role must allow `bedrock:InvokeModel` and
+  `bedrock:InvokeModelWithResponseStream` on the inference profile
+  `us.anthropic.claude-opus-5-5` in us-east-1 and on the foundation model
+  `anthropic.claude-opus-5-5` in each region the profile routes to (us-east-1,
+  us-east-2 and us-west-2).
 - The SusVibes fork's branch `bench/aidlc-arms` pushed to
   `warren830/susvibes`. `bench.py setup` clones it from there.
 
@@ -135,8 +138,9 @@ them). The local driver refuses to start when `AIDLC_UNATTENDED`,
 | Pin | Value |
 | --- | --- |
 | `CLAUDE_CODE_VERSION` | 2.1.318, also the CLI the SDK in `requirements.txt` bundles |
-| `ANTHROPIC_MODEL` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. **Open decision for warren.** |
+| `ANTHROPIC_MODEL` | `us.anthropic.claude-opus-5-5`, Claude Opus 5.5 for every arm (warren, 2026-11-08) |
 | `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` | the same model. AI-DLC's reviewers pin `sonnet`, and Claude Code's Explore agent and small calls use `haiku`, so every alias points at the one model |
+| `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK` | 1, so a refused call is never re-sent to another model |
 | `AWS_REGION` | us-east-1, the Bedrock region |
 | `AIDLC_VERSION` | 2.11.3 |
 | `PLUGIN_COMMIT` | `76ecd71`, the plugin under test |
@@ -163,7 +167,7 @@ bench-work/
 The driver writes `raw.jsonl` (the CLI's stdout as it wrote it),
 `answers.jsonl` (one line per scripted answer), `permissions.jsonl` (tool
 calls it denied) and `summary.json` (status, cost, tokens, turns, gate
-counts and the AI-DLC state). BaxBench keeps the app from `/app/code`
+counts, model refusals and the AI-DLC state). BaxBench keeps the app from `/app/code`
 without `node_modules`, `__pycache__`, `target`, `.venv` and `.git`
 anywhere, and without `aidlc*`, `.aidlc*`, `.claude`, `CLAUDE.md`,
 `AGENTS.md` and `.mcp.json` at its top.
@@ -203,6 +207,29 @@ Otherwise it sends the free-text reply. Each run ends with one status:
 Every other tool call that Claude Code puts to the driver is denied, as
 `claude -p` denies it. `AskUserQuestion` is not in `ALLOWED_TOOLS`, so it
 always reaches the driver.
+
+## Model refusals
+
+Claude Opus 5.5's safety systems can stop a call on security content, and
+both benchmarks are about security. The tasks and prompts stay identical in
+every arm, and nothing rewrites them to get past a refusal. Instead each run
+counts the stops in `summary.json` under `model_refusals`, read from
+`raw.jsonl` by `driver/refusals.py`:
+
+| Field | What it counts |
+| --- | --- |
+| `safety_stops` | Claude Code's own count of calls a safety system stopped, main loop and subagents |
+| `refusal_stop_reasons` | Assistant messages that ended with `stop_reason: refusal` |
+| `events` | The CLI's `model_refusal_no_fallback`, `model_refusal_fallback` and `model_fallback` frames |
+| `stopped_by_model` | Any of the above happened |
+| `ended_on_refusal` | The main thread's last stop was a refusal |
+
+`report` counts, per arm, the tasks with `stopped_by_model`, with
+`ended_on_refusal`, and with `other_model_answered`. The last one means a
+model other than Opus 5.5 answered a call. It should stay 0, because
+`config.env` sets `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1`. A refused task
+keeps its result: it times out, ends in error or fails BaxBench's tests, the
+same as any other failure.
 
 ## Decisions this code makes, with their evidence
 

@@ -97,3 +97,20 @@ def test_the_report_files_are_written_as_csv_and_markdown(work: Path) -> None:
     assert "| baxbench | arm1 | 2 |" in text
     assert "a SusVibes task costs and takes what a pilot task cost and took in the same arm" in text
     assert "$1.16 per task" in text
+
+
+def test_each_arm_counts_the_tasks_the_model_stopped_or_ended_by_refusing(tmp_path: Path) -> None:
+    refused = summary("error", 0.3, 50.0) | {"model_refusals": {
+        "safety_stops": 2, "refusal_stop_reasons": 1, "events": {"model_refusal_no_fallback": 1},
+        "stopped_by_model": True, "ended_on_refusal": True,
+    }}
+    clean = summary("completed", 0.5, 100.0) | {"model_refusals": {
+        "safety_stops": 0, "refusal_stop_reasons": 0, "events": {}, "stopped_by_model": False, "ended_on_refusal": False,
+    }}
+    baxbench_task(tmp_path, "arm3", "Calculator", "Go-net/http", refused, None)
+    baxbench_task(tmp_path, "arm3", "Login", "Python-Flask", clean, None)
+    baxbench_task(tmp_path, "arm3", "Forum", "Python-Flask", summary("completed", 0.5, 100.0), None)
+    rows = report.baxbench_rows(tmp_path / "runs/baxbench")
+    assert {row.task: row.safety_stops for row in rows}["Calculator/Go-net/http"] == 2
+    (arm3,) = report.summarize(rows)
+    assert (arm3["stopped_by_model"], arm3["ended_on_refusal"], arm3["other_model_answered"]) == (1, 1, 0)

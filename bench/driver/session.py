@@ -17,6 +17,7 @@ from driver.aidlc import NO_PROBE, Workflow
 from driver.decide import Finish, Stall, Status, decide
 from driver.person import Person
 from driver.record import Record
+from driver.refusals import scan_file
 from driver.transport import Transport, write_wrapper
 from driver.turns import Phase, Turn
 from driver.usage import Usage
@@ -135,7 +136,14 @@ class Session:
                 self.workflow = await probe(self.settings.transport)
             except (ProbeError, OSError, TimeoutError) as error:
                 log(f"final state probe failed: {error}")
-        summary = self.record.summary(finish, time.monotonic() - started, self.usage, self.workflow, self.error)
+        summary = self.record.summary(
+            finish,
+            time.monotonic() - started,
+            self.usage,
+            self.workflow,
+            scan_file(self.settings.out_dir / "raw.jsonl"),
+            self.error,
+        )
         self.record.write_summary(summary)
         log(f"{summary['status']} ({summary['reason']}) after {summary['wall_seconds']:.0f}s, ${summary['total_cost_usd']}")
         return summary
