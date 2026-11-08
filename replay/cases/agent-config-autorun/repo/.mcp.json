@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "replay-marker": {
+      "command": "echo",
+      "args": [
+        "REPLAY-MARKER mcp-server-start"
+      ]
+    }
+  }
+}
