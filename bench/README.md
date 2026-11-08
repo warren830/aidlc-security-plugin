@@ -297,14 +297,19 @@ Paths under `aidlc-workflows` are at tag v2.11.3. Paths under the SDK are in
   not set up and the agent could only ask for the setup that no run may do.
 - **Claude Code stays at its version.** `/root/.claude_env` sets
   `DISABLE_AUTOUPDATER=1` for every arm.
-- **BaxBench's apt sources.** Every BaxBench base image is Debian bullseye.
-  In November 2026 its security mirror lists `sqlite3 3.34.1-3+deb11u1` but
-  answers 404 for the file, so BaxBench's first RUN line,
-  `apt-get install sqlite3`, fails in every image. `bench.py setup` adds one
-  line in front of `COMMON_DOCKER_RUN_COMMANDS` in the BaxBench checkout. It
-  points apt at snapshot.debian.org at `DEBIAN_SNAPSHOT`, so the agent's image
-  and BaxBench's own test image install the same packages. `setup.json`
-  records the line under `baxbench_patch`. BaxBench's tests are unchanged.
+- **BaxBench's Dockerfiles, patched to build.** BaxBench v1.0.0's images
+  no longer build as published, and that blocks its own tests as much as the
+  agent. `bench.py setup` resets `src/env/` in the BaxBench checkout, then
+  patches it. `setup.json` records both patches under `baxbench_patch`.
+  BaxBench's tests are unchanged.
+  - Every base image is Debian bullseye. Its security mirror lists packages
+    such as `sqlite3 3.34.1-3+deb11u1` and `git 1:2.30.2-1+deb11u5`, but
+    answers 404 for their files, so `apt-get install` fails. A line after
+    each `FROM` points apt at snapshot.debian.org at `DEBIAN_SNAPSHOT`.
+  - The Go images run `go install golang.org/x/tools/cmd/goimports@latest`,
+    and that release now needs Go 1.24. The images have Go 1.23 with
+    `GOTOOLCHAIN=local`, so the install fails. It is pinned to
+    `GOIMPORTS_VERSION`, v0.36.0, the newest release that builds on Go 1.23.
 - **BaxBench agent image.** The env's own Dockerfile with BaxBench's RUN lines
   and no app. A COPY that names the app's file (Rust's `main.rs`) gets an
   empty one, and git and curl are added when the image lacks them.

@@ -109,13 +109,23 @@ def test_the_baxbench_command_runs_each_task_then_both_baxbench_modes(tmp_path: 
     assert (work.runs / "baxbench/results/arm1/setup-arm1.sh").read_text() == ARMS["arm1"].setup_script()
 
 
-def test_baxbench_images_take_apt_from_one_debian_snapshot_patched_once(tmp_path: Path) -> None:
-    base = tmp_path / "src" / "env" / "base.py"
-    base.parent.mkdir(parents=True)
-    base.write_text('COMMON_DOCKER_RUN_COMMANDS = [\n    "apt-get update",\n    "apt-get install sqlite3",\n]\n', encoding="utf-8")
-    command = bench.pin_debian_snapshot(tmp_path, "20250811T000000Z")
-    bench.pin_debian_snapshot(tmp_path, "20250811T000000Z")
+def test_baxbench_dockerfiles_get_the_apt_snapshot_after_every_from_and_a_pinned_goimports(tmp_path: Path) -> None:
+    env = tmp_path / "src" / "env"
+    env.mkdir(parents=True)
+    (env / "go.py").write_text(
+        'W = "/app"\nGO = f"""\nFROM golang:1.23-bullseye\nRUN mkdir -p {W}\nRUN go install golang.org/x/tools/cmd/goimports@latest\n"""\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "v1"], check=True)
+    patch = bench.patch_baxbench_images(tmp_path, "20250811T000000Z", "v0.36.0")
+    bench.patch_baxbench_images(tmp_path, "20250811T000000Z", "v0.36.0")
     namespace: dict = {}
-    exec(base.read_text(encoding="utf-8"), namespace)
-    assert namespace["COMMON_DOCKER_RUN_COMMANDS"] == [command, "apt-get update", "apt-get install sqlite3"]
-    assert "snapshot.debian.org/archive/debian-security/20250811T000000Z bullseye-security" in command
+    exec((env / "go.py").read_text(encoding="utf-8"), namespace)
+    lines = namespace["GO"].splitlines()
+    assert lines[1] == "FROM golang:1.23-bullseye"
+    assert lines[3] == f"RUN {patch['apt_after_every_FROM']}"
+    assert "debian-security/20250811T000000Z bullseye-security main\\n" in lines[3]
+    assert lines.count(lines[3]) == 1
+    assert "RUN go install golang.org/x/tools/cmd/goimports@v0.36.0" in lines

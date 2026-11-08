@@ -96,7 +96,7 @@ def checkout(url: str, path: Path, ref: str) -> str:
     return commit
 
 
-APT_SNAPSHOT_MARK = "# bench: Debian snapshot"
+IMAGE_PATCH_MARK = "# bench: pinned for a build that still works"
 
 
 def apt_snapshot_command(snapshot: str) -> str:
@@ -107,28 +107,35 @@ def apt_snapshot_command(snapshot: str) -> str:
     return f'rm -f /etc/apt/sources.list.d/debian.sources && printf "{lines}" > /etc/apt/sources.list'
 
 
-def pin_debian_snapshot(baxbench: Path, snapshot: str) -> str:
-    """Point every BaxBench image's apt at one Debian snapshot.
+def patch_baxbench_images(baxbench: Path, snapshot: str, goimports: str) -> dict[str, str]:
+    """Make BaxBench v1.0.0's Dockerfiles build again, for the agent's image and its own test image alike.
 
-    All of BaxBench's base images are Debian bullseye. Past its LTS end the
-    mirrors' bullseye-security index still names packages that the pool no
-    longer holds, so `apt-get install sqlite3`, the first RUN line of every
-    image, fails with a 404. A snapshot, at the date golang:1.23-bullseye
-    names in its own commented sources lines, serves a consistent index and
-    pool. The command
-    goes first in COMMON_DOCKER_RUN_COMMANDS, so the agent's image and
-    BaxBench's own test image get the same packages.
+    - apt: every base image is Debian bullseye. Past its LTS end the mirrors'
+      bullseye-security index still names packages the pool no longer holds,
+      so `apt-get install` fails with a 404 (sqlite3, git). Right after each
+      FROM, apt is pointed at a snapshot (the date golang:1.23-bullseye names
+      in its own commented sources lines), which serves a consistent index and
+      pool.
+    - Go: `go install golang.org/x/tools/cmd/goimports@latest` now resolves a
+      release that needs Go 1.24, and the image has Go 1.23 with
+      GOTOOLCHAIN=local. The newest release that builds on Go 1.23 is pinned.
+
+    The env sources are reset first, so a second setup patches them once.
     """
-    base = baxbench / "src" / "env" / "base.py"
-    text = base.read_text(encoding="utf-8")
+    env_dir = baxbench / "src" / "env"
+    subprocess.run(["git", "-C", str(baxbench), "checkout", "--", "src/env"], check=True)
     command = apt_snapshot_command(snapshot)
-    if APT_SNAPSHOT_MARK not in text:
-        anchor = "COMMON_DOCKER_RUN_COMMANDS = [\n"
-        if anchor not in text:
-            raise SystemExit(f"{base} has no COMMON_DOCKER_RUN_COMMANDS list to patch")
-        text = text.replace(anchor, f"{anchor}    {command!r},  {APT_SNAPSHOT_MARK}\n", 1)
-        base.write_text(text, encoding="utf-8")
-    return command
+    in_source = command.replace("\\", "\\\\")
+    for source in sorted(env_dir.glob("*.py")):
+        text = source.read_text(encoding="utf-8")
+        patched = "".join(
+            f"{line}{IMAGE_PATCH_MARK}\nRUN {in_source}\n" if line.startswith("FROM ") else line
+            for line in text.splitlines(keepends=True)
+        )
+        patched = patched.replace("goimports@latest", f"goimports@{goimports}")
+        if patched != text:
+            source.write_text(patched, encoding="utf-8")
+    return {"apt_after_every_FROM": command, "goimports": goimports}
 
 
 def setup(work: Work, pins: dict[str, str]) -> dict:
@@ -138,7 +145,7 @@ def setup(work: Work, pins: dict[str, str]) -> dict:
         "susvibes_fork": checkout(pins["SUSVIBES_FORK_URL"], work.susvibes, fork_ref),
         "baxbench": checkout(pins["BAXBENCH_URL"], work.baxbench, pins["BAXBENCH_REF"]),
     }
-    apt_snapshot = pin_debian_snapshot(work.baxbench, pins["DEBIAN_SNAPSHOT"])
+    image_patch = patch_baxbench_images(work.baxbench, pins["DEBIAN_SNAPSHOT"], pins["GOIMPORTS_VERSION"])
     if not work.susvibes_python.exists():
         run([sys.executable, "-m", "venv", work.susvibes_python.parent.parent])
     run([work.susvibes_python, "-m", "pip", "install", "-q", "-r", work.susvibes / "requirements.txt"])
@@ -157,7 +164,7 @@ def setup(work: Work, pins: dict[str, str]) -> dict:
         "host": pinfile.host(),
         "pins": pins,
         "commits": commits,
-        "baxbench_patch": {"COMMON_DOCKER_RUN_COMMANDS[0]": apt_snapshot},
+        "baxbench_patch": image_patch,
         "assets": assets,
     }
     pinfile.write_json(work.setup_manifest, manifest)
