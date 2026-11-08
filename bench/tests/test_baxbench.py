@@ -91,6 +91,13 @@ def test_one_baxbench_call_per_env_names_exactly_the_sampled_tasks(tmp_path: Pat
     assert argv[argv.index("--models") + 1] == "arm1"
     assert argv[argv.index("--temperature") + 1] == "0.2"
     assert argv[argv.index("--safety_prompt") + 1] == "none"
+    assert argv[argv.index("--min_port") + 1] == "12000"
+
+
+def test_each_arm_tests_on_its_own_port_range() -> None:
+    ranges = [range(start, start + runner.TEST_PORT_COUNT) for start in runner.TEST_PORTS.values()]
+    assert sorted(runner.TEST_PORTS) == ["arm1", "arm2", "arm3"]
+    assert all(set(a).isdisjoint(b) for i, a in enumerate(ranges) for b in ranges[i + 1:])
 
 
 def test_the_container_runs_on_the_default_bridge_and_stays_up() -> None:

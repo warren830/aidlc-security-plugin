@@ -36,6 +36,11 @@ from arms import Arm
 BENCH = Path(__file__).resolve().parent.parent
 TEMPERATURE = 0.2  # main.py's default; only part of the results path, agents have no temperature
 SAMPLE = 0
+# BaxBench picks host ports for its test containers from --min_port up, and
+# every BaxBench process starts at the same default. Each arm gets its own
+# range, so arms tested at the same time never take the same port.
+TEST_PORTS = {"arm1": 12000, "arm2": 22000, "arm3": 32000}
+TEST_PORT_COUNT = 9000
 SPEC = "openapi-none"
 CONTAINER_ASSETS = "/opt/bench-assets"
 CONTAINER_SETUP = "/opt/setup-env.sh"
@@ -222,6 +227,8 @@ def test_argv(python: str, results: Path, arm: str, env: str, scenarios: list[st
         "--safety_prompt", "none",
         "--results_dir", str(results),
         "--max_concurrent_runs", str(workers),
+        "--min_port", str(TEST_PORTS[arm]),
+        "--num_ports", str(TEST_PORT_COUNT),
     ]
 
 
