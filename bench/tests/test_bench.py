@@ -107,3 +107,15 @@ def test_the_baxbench_command_runs_each_task_then_both_baxbench_modes(tmp_path: 
     manifest = json.loads((work.runs / "baxbench/results/arm1/manifest.json").read_text())
     assert manifest["arm"] == "arm1" and manifest["ended"] and manifest["pins"] == PINS
     assert (work.runs / "baxbench/results/arm1/setup-arm1.sh").read_text() == ARMS["arm1"].setup_script()
+
+
+def test_baxbench_images_take_apt_from_one_debian_snapshot_patched_once(tmp_path: Path) -> None:
+    base = tmp_path / "src" / "env" / "base.py"
+    base.parent.mkdir(parents=True)
+    base.write_text('COMMON_DOCKER_RUN_COMMANDS = [\n    "apt-get update",\n    "apt-get install sqlite3",\n]\n', encoding="utf-8")
+    command = bench.pin_debian_snapshot(tmp_path, "20250811T000000Z")
+    bench.pin_debian_snapshot(tmp_path, "20250811T000000Z")
+    namespace: dict = {}
+    exec(base.read_text(encoding="utf-8"), namespace)
+    assert namespace["COMMON_DOCKER_RUN_COMMANDS"] == [command, "apt-get update", "apt-get install sqlite3"]
+    assert "snapshot.debian.org/archive/debian-security/20250811T000000Z bullseye-security" in command

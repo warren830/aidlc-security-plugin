@@ -297,6 +297,14 @@ Paths under `aidlc-workflows` are at tag v2.11.3. Paths under the SDK are in
   not set up and the agent could only ask for the setup that no run may do.
 - **Claude Code stays at its version.** `/root/.claude_env` sets
   `DISABLE_AUTOUPDATER=1` for every arm.
+- **BaxBench's apt sources.** Every BaxBench base image is Debian bullseye.
+  In November 2026 its security mirror lists `sqlite3 3.34.1-3+deb11u1` but
+  answers 404 for the file, so BaxBench's first RUN line,
+  `apt-get install sqlite3`, fails in every image. `bench.py setup` adds one
+  line in front of `COMMON_DOCKER_RUN_COMMANDS` in the BaxBench checkout. It
+  points apt at snapshot.debian.org at `DEBIAN_SNAPSHOT`, so the agent's image
+  and BaxBench's own test image install the same packages. `setup.json`
+  records the line under `baxbench_patch`. BaxBench's tests are unchanged.
 - **BaxBench agent image.** The env's own Dockerfile with BaxBench's RUN lines
   and no app. A COPY that names the app's file (Rust's `main.rs`) gets an
   empty one, and git and curl are added when the image lacks them.

@@ -96,6 +96,41 @@ def checkout(url: str, path: Path, ref: str) -> str:
     return commit
 
 
+APT_SNAPSHOT_MARK = "# bench: Debian snapshot"
+
+
+def apt_snapshot_command(snapshot: str) -> str:
+    lines = "".join(
+        f"deb [check-valid-until=no] http://snapshot.debian.org/archive/{archive}/{snapshot} {suite} main\\n"
+        for archive, suite in (("debian", "bullseye"), ("debian-security", "bullseye-security"), ("debian", "bullseye-updates"))
+    )
+    return f'rm -f /etc/apt/sources.list.d/debian.sources && printf "{lines}" > /etc/apt/sources.list'
+
+
+def pin_debian_snapshot(baxbench: Path, snapshot: str) -> str:
+    """Point every BaxBench image's apt at one Debian snapshot.
+
+    All of BaxBench's base images are Debian bullseye. Past its LTS end the
+    mirrors' bullseye-security index still names packages that the pool no
+    longer holds, so `apt-get install sqlite3`, the first RUN line of every
+    image, fails with a 404. A snapshot, at the date golang:1.23-bullseye
+    names in its own commented sources lines, serves a consistent index and
+    pool. The command
+    goes first in COMMON_DOCKER_RUN_COMMANDS, so the agent's image and
+    BaxBench's own test image get the same packages.
+    """
+    base = baxbench / "src" / "env" / "base.py"
+    text = base.read_text(encoding="utf-8")
+    command = apt_snapshot_command(snapshot)
+    if APT_SNAPSHOT_MARK not in text:
+        anchor = "COMMON_DOCKER_RUN_COMMANDS = [\n"
+        if anchor not in text:
+            raise SystemExit(f"{base} has no COMMON_DOCKER_RUN_COMMANDS list to patch")
+        text = text.replace(anchor, f"{anchor}    {command!r},  {APT_SNAPSHOT_MARK}\n", 1)
+        base.write_text(text, encoding="utf-8")
+    return command
+
+
 def setup(work: Work, pins: dict[str, str]) -> dict:
     fork_ref = pins["SUSVIBES_FORK_COMMIT"] or f"origin/{pins['SUSVIBES_FORK_BRANCH']}"
     commits = {
@@ -103,6 +138,7 @@ def setup(work: Work, pins: dict[str, str]) -> dict:
         "susvibes_fork": checkout(pins["SUSVIBES_FORK_URL"], work.susvibes, fork_ref),
         "baxbench": checkout(pins["BAXBENCH_URL"], work.baxbench, pins["BAXBENCH_REF"]),
     }
+    apt_snapshot = pin_debian_snapshot(work.baxbench, pins["DEBIAN_SNAPSHOT"])
     if not work.susvibes_python.exists():
         run([sys.executable, "-m", "venv", work.susvibes_python.parent.parent])
     run([work.susvibes_python, "-m", "pip", "install", "-q", "-r", work.susvibes / "requirements.txt"])
@@ -116,7 +152,14 @@ def setup(work: Work, pins: dict[str, str]) -> dict:
     pilot = json.loads(PILOT.read_text(encoding="utf-8"))
     if pilot["baxbench_commit"] != commits["baxbench"]:
         raise SystemExit(f"pilot_tasks.json was sampled from BaxBench {pilot['baxbench_commit']}, not {commits['baxbench']}")
-    manifest = {"finished": pinfile.now(), "host": pinfile.host(), "pins": pins, "commits": commits, "assets": assets}
+    manifest = {
+        "finished": pinfile.now(),
+        "host": pinfile.host(),
+        "pins": pins,
+        "commits": commits,
+        "baxbench_patch": {"COMMON_DOCKER_RUN_COMMANDS[0]": apt_snapshot},
+        "assets": assets,
+    }
     pinfile.write_json(work.setup_manifest, manifest)
     return manifest
 
