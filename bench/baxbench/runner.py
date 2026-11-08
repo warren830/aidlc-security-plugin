@@ -270,6 +270,11 @@ def run_task(ctx: Context, task: Task) -> dict:
     code = code_dir(ctx.results, ctx.arm.label, task)
     if not ctx.force and record_path.exists() and code.exists():
         return json.loads(record_path.read_text(encoding="utf-8"))
+    # A run starts clean: BaxBench skips a sample that already has
+    # test_results.json, and report reads whatever summary.json it finds, so
+    # a previous attempt's files would stand in for this one's.
+    for stale in (out, code.parent):
+        shutil.rmtree(stale, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     log = out / "runner.log"
     log.write_text("", encoding="utf-8")

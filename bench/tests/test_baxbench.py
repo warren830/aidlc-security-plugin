@@ -191,3 +191,21 @@ def test_a_failed_setup_skips_the_driver_and_still_gives_baxbench_a_code_dir(fak
     assert not calls.exists()
     assert "setup broke" in (ctx.artifacts / "arm3" / "Login" / "Python-Flask" / "setup.log").read_text(encoding="utf-8")
     assert runner.code_dir(ctx.results, "arm3", task("Login", "Python-Flask")).is_dir()
+
+
+def test_a_rerun_drops_the_previous_attempts_test_results_and_summary(fake_docker: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_driver(monkeypatch, tmp_path)
+    monkeypatch.setenv("FAKE_SETUP_FAILS", "1")
+    ctx = context(tmp_path)
+    login = task("Login", "Python-Flask")
+    sample = runner.sample_dir(ctx.results, "arm3", login)
+    out = ctx.artifacts / "arm3" / "Login" / "Python-Flask"
+    sample.mkdir(parents=True)
+    out.mkdir(parents=True)
+    (sample / "test_results.json").write_text("{}", encoding="utf-8")
+    (out / "summary.json").write_text("{}", encoding="utf-8")
+
+    runner.run_task(ctx, login)
+
+    assert not (sample / "test_results.json").exists()
+    assert not (out / "summary.json").exists()
