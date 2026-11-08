@@ -100,8 +100,8 @@ def aidlc_release(pins: dict[str, str], arch: Arch, downloads: Path) -> dict[str
     base = f"{pins['AIDLC_RELEASE_URL']}/v{version}"
     folder = downloads / f"aidlc-{version}-{arch.aidlc}"
     sums = listed_sums(download(f"{base}/checksums.txt", folder / "checksums.txt"))
-    # The installer takes the musl build wherever a musl loader exists, and the
-    # Rust image installs musl-dev, so both builds ship.
+    # The installer takes the musl build wherever a musl loader exists; both
+    # builds ship so an image that really is musl can install too.
     binaries = [f"aidlc-linux-{arch.aidlc}", f"aidlc-linux-{arch.aidlc}-musl"]
     files = ["install.sh", "version.json", f"aidlc-runtime-{version}.tar.gz", *binaries]
     checksums = {name: checked(download(f"{base}/{name}", folder / name), sums[name]) for name in files}

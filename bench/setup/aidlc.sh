@@ -11,7 +11,24 @@ if [ "$("$HOME/.local/bin/aidlc" --version 2>/dev/null | cut -d' ' -f2)" != "$AI
   if [ "$(id -u)" = 0 ]; then
     install_opts+=(--allow-root)
   fi
-  sh "$release/install.sh" "${install_opts[@]}"
+  # The installer picks its musl build whenever a musl loader exists, and that
+  # build needs musl's libstdc++. BaxBench's Rust image is glibc with musl-dev
+  # installed, so the loader is hidden while the installer looks.
+  hidden=()
+  if ldd --version 2>&1 | grep -qiE 'glibc|gnu libc'; then
+    for loader in /lib/ld-musl-*.so.1 /usr/lib/ld-musl-*.so.1; do
+      if [ -e "$loader" ]; then
+        mv "$loader" "$loader.bench-hidden"
+        hidden+=("$loader")
+      fi
+    done
+  fi
+  status=0
+  sh "$release/install.sh" "${install_opts[@]}" || status=$?
+  for loader in "${hidden[@]}"; do
+    mv "$loader.bench-hidden" "$loader"
+  done
+  [ "$status" = 0 ]
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
