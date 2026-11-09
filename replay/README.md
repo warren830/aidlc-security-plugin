@@ -32,11 +32,11 @@ runner 对每个用例做两件事：
 2. 对 `security-scan-result.md` 运行插件的 `security-findings-gate`。门禁拦下，结果就是 `continuum`：
    Continuum 报出了 HIGH 及以上的 finding，插件门禁据此拦下。
 
-两步都没拦下，结果就是 `not-detected`。
+两步都没拦下，结果就是 `not-detected`。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
+证据里会列出它报的等级。
 
 修好版（带 `pair`、名字以 `-fixed` 结尾）被拦下算误拦。报告开头给出拦截率（有问题的版本被拦下几个）
-和误报率（修好版被误拦几个），以及每对场景两边的结果。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
-证据里会列出它报的等级。
+和误报率（修好版被误拦几个），以及每对场景两边的结果。
 
 结果和 `expected` 不一致时，`run.ts` 失败。缺口不能靠改报告藏起来；补上缺口以后，
 也要同时改 `expected.md`。
