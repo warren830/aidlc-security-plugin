@@ -1,0 +1,215 @@
+{
+  "seed": 20261105,
+  "baxbench_ref": "v1.0.0",
+  "baxbench_commit": "a67abd942454a11ff2966674d498abc451a52d67",
+  "spec_type": "openapi",
+  "safety_prompt": "none",
+  "scenarios": [
+    "Calculator",
+    "ClickCount",
+    "Compiler",
+    "CreditCardService",
+    "FileSearch",
+    "Forum",
+    "FrameExtract",
+    "ImageConverter",
+    "ImageTransfer",
+    "Logger",
+    "Login",
+    "Monitor",
+    "PDFCat",
+    "PDFToText",
+    "ProductCatalog",
+    "ProfileCollection",
+    "Recipes",
+    "RecommendationService",
+    "RegexSearch",
+    "SecretStorage",
+    "ShopOverview",
+    "ShoppingCartService",
+    "SongDownloader",
+    "Unsubscribe",
+    "UptimeService",
+    "UserCreation",
+    "Wiki",
+    "ZipToTxt"
+  ],
+  "envs": [
+    "Go-Fiber",
+    "Go-Gin",
+    "Go-net/http",
+    "JavaScript-express",
+    "JavaScript-fastify",
+    "JavaScript-koa",
+    "JavaScript-nest",
+    "PHP-Lumen",
+    "Python-Django",
+    "Python-FastAPI",
+    "Python-Flask",
+    "Python-aiohttp",
+    "Ruby-Rails",
+    "Rust-Actix"
+  ],
+  "tasks": [
+    {
+      "scenario": "Calculator",
+      "env": "Go-Fiber"
+    },
+    {
+      "scenario": "Calculator",
+      "env": "JavaScript-express"
+    },
+    {
+      "scenario": "ClickCount",
+      "env": "Go-Fiber"
+    },
+    {
+      "scenario": "ClickCount",
+      "env": "JavaScript-express"
+    },
+    {
+      "scenario": "Compiler",
+      "env": "Go-Gin"
+    },
+    {
+      "scenario": "Compiler",
+      "env": "Rust-Actix"
+    },
+    {
+      "scenario": "CreditCardService",
+      "env": "Python-aiohttp"
+    },
+    {
+      "scenario": "FileSearch",
+      "env": "Python-Django"
+    },
+    {
+      "scenario": "Forum",
+      "env": "JavaScript-koa"
+    },
+    {
+      "scenario": "FrameExtract",
+      "env": "Python-FastAPI"
+    },
+    {
+      "scenario": "FrameExtract",
+      "env": "Python-Flask"
+    },
+    {
+      "scenario": "ImageConverter",
+      "env": "JavaScript-koa"
+    },
+    {
+      "scenario": "ImageConverter",
+      "env": "Ruby-Rails"
+    },
+    {
+      "scenario": "ImageTransfer",
+      "env": "Python-FastAPI"
+    },
+    {
+      "scenario": "ImageTransfer",
+      "env": "Python-Flask"
+    },
+    {
+      "scenario": "Logger",
+      "env": "Python-Flask"
+    },
+    {
+      "scenario": "Login",
+      "env": "Go-net/http"
+    },
+    {
+      "scenario": "Login",
+      "env": "PHP-Lumen"
+    },
+    {
+      "scenario": "Monitor",
+      "env": "JavaScript-fastify"
+    },
+    {
+      "scenario": "Monitor",
+      "env": "Python-aiohttp"
+    },
+    {
+      "scenario": "PDFCat",
+      "env": "Python-Django"
+    },
+    {
+      "scenario": "PDFToText",
+      "env": "JavaScript-express"
+    },
+    {
+      "scenario": "ProductCatalog",
+      "env": "PHP-Lumen"
+    },
+    {
+      "scenario": "ProfileCollection",
+      "env": "JavaScript-nest"
+    },
+    {
+      "scenario": "ProfileCollection",
+      "env": "Python-Django"
+    },
+    {
+      "scenario": "Recipes",
+      "env": "JavaScript-nest"
+    },
+    {
+      "scenario": "RecommendationService",
+      "env": "Go-net/http"
+    },
+    {
+      "scenario": "RegexSearch",
+      "env": "JavaScript-fastify"
+    },
+    {
+      "scenario": "RegexSearch",
+      "env": "Python-aiohttp"
+    },
+    {
+      "scenario": "SecretStorage",
+      "env": "JavaScript-fastify"
+    },
+    {
+      "scenario": "ShopOverview",
+      "env": "Python-FastAPI"
+    },
+    {
+      "scenario": "ShoppingCartService",
+      "env": "Go-Gin"
+    },
+    {
+      "scenario": "SongDownloader",
+      "env": "Go-Gin"
+    },
+    {
+      "scenario": "SongDownloader",
+      "env": "Rust-Actix"
+    },
+    {
+      "scenario": "Unsubscribe",
+      "env": "Go-Fiber"
+    },
+    {
+      "scenario": "UptimeService",
+      "env": "JavaScript-koa"
+    },
+    {
+      "scenario": "UptimeService",
+      "env": "Ruby-Rails"
+    },
+    {
+      "scenario": "UserCreation",
+      "env": "JavaScript-nest"
+    },
+    {
+      "scenario": "Wiki",
+      "env": "Ruby-Rails"
+    },
+    {
+      "scenario": "ZipToTxt",
+      "env": "Rust-Actix"
+    }
+  ]
+}
