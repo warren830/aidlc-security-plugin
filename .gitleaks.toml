@@ -1,0 +1,9 @@
+# The replay cases carry fake credentials on purpose, so that a case can show
+# what a scanner should report. Every value is fake and lives under replay/cases/.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials in the replay cases"
+paths = ['''^replay/cases/''']
+regexes = ['''AKIAEXAMPLE[A-Z0-9]*''']

@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "types": ["bun-types"]
   },
-  "include": ["scripts/**/*.ts", "security/tools/**/*.ts", "tests/**/*.ts"]
+  "include": ["scripts/**/*.ts", "security/tools/**/*.ts", "tests/**/*.ts", "replay/*.ts"]
 }

@@ -1,0 +1,8 @@
+{
+  "name": "replay-app",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "example-helper": "file:./vendor/example-helper"
+  }
+}

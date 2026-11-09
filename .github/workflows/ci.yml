@@ -66,3 +66,7 @@ jobs:
       - name: Test
         working-directory: plugin
         run: bun run test
+
+      - name: Replay
+        working-directory: plugin
+        run: bun run replay:check

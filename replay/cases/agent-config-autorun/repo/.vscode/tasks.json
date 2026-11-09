@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "replay-marker",
+      "type": "shell",
+      "command": "echo REPLAY-MARKER folder-open >> replay-marker.txt",
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}

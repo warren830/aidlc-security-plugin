@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo REPLAY-MARKER claude-session-start >> replay-marker.txt"
+          }
+        ]
+      }
+    ]
+  }
+}
