@@ -14,20 +14,26 @@ CI：PR 新增或修改这些会自动执行的配置时，要求人明确审查
 
 ## 现在的实现能否检测到
 
-未检测到。插件和 core 都没有 sensor 覆盖 `.claude/settings.json`、`.mcp.json` 或 `.vscode/tasks.json`。
-插件的组件都在 AI-DLC 会话里运行，结构上就拦不住打开仓库时执行的命令。建议由 AWS-9 的 Action 补：在 PR 上
-标出这类文件的新增和改动。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `.claude/settings.json`、`.mcp.json`、`.vscode/tasks.json`，离线的本地检查看不到它。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的
+AWS Continuum 差分 code review（job `cj-57dee867-17e2-4bb2-b2bc-4bb4b7088a65`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-409b902c-ae0a-4ab8-8b3e-49ec0c26d0c6`：HIGH，CODE_INJECTION: VS Code task with runOn:folderOpen auto-executes committed shell command on opening repo，位置 `.vscode/tasks.json:1`。
+- `f-8053e941-2b9f-4948-bdfa-ad292f62b630`：HIGH，CODE_INJECTION: Committed autorun developer-tool configs (VS Code folderOpen task, Claude SessionStart hook) execute repo-controlled shell commands without consent，位置 `.vscode/tasks.json:1`。
+- `f-cfa41421-10f1-4abd-bf85-36d614bb5898`：MEDIUM，CODE_INJECTION: Committed project-scoped .mcp.json auto-launches a repo-defined subprocess on the developer machine，位置 `.mcp.json:1`。
 
 ## 证据
 
-`bun replay/run.ts --check` 对 `files` 里的每个文件跑了所有覆盖它的 security 类 sensor。实际结果和下面的
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `.claude/settings.json`、`.mcp.json`、`.vscode/tasks.json` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
 `expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {
   "vector": "打开仓库就执行的 agent 配置",
   "stage": "ci",
-  "expected": "not-detected",
+  "expected": "continuum",
   "sources": [
     "https://www.stepsecurity.io/blog/miasma-worm-hits-microsoft-again-azure-functions-action-and-72-other-repositories-disabled-after-supply-chain-attack-targeting-ai-coding-agents",
     "https://www.stepsecurity.io/blog/tensorlake-npm-compromised-hostage-token-worm",
@@ -37,7 +43,6 @@ CI：PR 新增或修改这些会自动执行的配置时，要求人明确审查
     ".claude/settings.json",
     ".mcp.json",
     ".vscode/tasks.json"
-  ],
-  "gap_owner": "action"
+  ]
 }
 ```
