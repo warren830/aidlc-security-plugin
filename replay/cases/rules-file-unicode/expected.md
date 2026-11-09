@@ -15,27 +15,30 @@ diff scan 只看这个 unit 的改动，看不到早已存在的规则文件。
 
 ## 现在的实现能否检测到
 
-未检测到。插件和 core 都没有 sensor 覆盖 `.cursor/rules/` 或 `.kiro/steering/`，插件也不在读 steering
-之前检查不可见字符。建议由 AWS-9 的 Action 补：它在每个 PR 上运行，人提交的规则文件也逃不过。插件可以再加一个
-读 steering 前的同类检查兜底，但不是首选。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `.cursor/rules/style.mdc`、`.kiro/steering/style.md`，离线的本地检查看不到它。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的
+AWS Continuum 差分 code review（job `cj-6433c732-b80e-4664-b22d-c9b0a731f5ed`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-c2d98e7c-d2fe-467f-8e37-da43dac79c7a`：HIGH，CODE_INJECTION: Hidden Unicode-tag/zero-width prompt-injection instructions in new always-applied AI agent rule files，位置 `.cursor/rules/style.mdc:1`。
 
 ## 证据
 
-`bun replay/run.ts --check` 对 `files` 里的每个文件跑了所有覆盖它的 security 类 sensor。实际结果和下面的
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `.cursor/rules/style.mdc`、`.kiro/steering/style.md` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
 `expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {
   "vector": "规则文件里的隐形 Unicode 指令",
   "stage": "ci",
-  "expected": "not-detected",
+  "expected": "continuum",
   "sources": [
     "https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents"
   ],
   "files": [
     ".cursor/rules/style.mdc",
     ".kiro/steering/style.md"
-  ],
-  "gap_owner": "action"
+  ]
 }
 ```

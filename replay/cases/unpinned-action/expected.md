@@ -13,25 +13,30 @@ AI-DLC 生成这个文件时，代码生成门禁也可能拦下，但 diff scan
 
 ## 现在的实现能否检测到
 
-未检测到。插件没有 sensor 覆盖 `.github/workflows/`，`aidlc-security-action` 的 main 上还没有任何检查。
-AWS-9 的 PR（warren830/aidlc-security-action#1，未合并）里有 `action-pinning` 检查。
-这项缺口建议由 AWS-9 的 Action 补：它在 PR 上运行，能看到不经过 AI-DLC 的 workflow 改动。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `.github/workflows/build.yml`，离线的本地检查看不到它。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的
+AWS Continuum 差分 code review（job `cj-25a2a2cb-cebe-419c-b04a-4bb04880409c`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-d9545f10-915d-45fa-b760-96831d979447`：HIGH，OTHER: CI workflow uses known-compromised tj-actions/changed-files@v45 pinned to mutable tag (CVE-2025-30066)，位置 `.github/workflows/build.yml:14`。
 
 ## 证据
 
-`bun replay/run.ts --check` 对 `repo/.github/workflows/build.yml` 跑了所有覆盖它的 security
-类 sensor。实际结果和下面的 `expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `.github/workflows/build.yml` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {
   "vector": "引用未固定 SHA 的 Action",
   "stage": "ci",
-  "expected": "not-detected",
+  "expected": "continuum",
   "sources": [
     "https://www.stepsecurity.io/blog/harden-runner-detection-tj-actions-changed-files-action-is-compromised",
     "https://www.wiz.io/blog/trivy-compromised-teampcp-supply-chain-attack"
   ],
-  "files": [".github/workflows/build.yml"],
-  "gap_owner": "action"
+  "files": [
+    ".github/workflows/build.yml"
+  ]
 }
 ```

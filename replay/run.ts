@@ -2,7 +2,8 @@
 // today, and writes replay/REPORT.md. Two probes, both offline:
 //   - every security-category sensor, core's or the plugin's, whose `matches`
 //     covers one of the case's files, fired on that file;
-//   - the security-findings-gate worker on the case's recorded scan record.
+//   - the security-findings-gate worker on the case's security-scan-result.md,
+//     the real AWS Continuum output that replay/continuum.ts recorded.
 // A case's measured result must equal the `expected` its expected.md declares,
 // so a gap cannot be hidden by editing the report, and closing one fails the
 // run until expected.md says so.
@@ -11,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
+import { CONTINUUM_RECORD } from "./continuum.ts";
 
 const REPLAY = join(REPO_ROOT, "replay");
 const CASES = join(REPLAY, "cases");
@@ -18,24 +20,11 @@ const REPORT = join(REPLAY, "REPORT.md");
 const GATE = join(PLUGIN_ROOT, "tools", "aidlc-sensor-security-findings-gate.ts");
 
 const STAGES = { "threat-model": "威胁建模", "code-generation-gate": "代码生成门禁", ci: "CI" } as const;
-const RESULTS = { detected: "检测到", "not-detected": "未检测到", "needs-aws": "需要 AWS" } as const;
+const RESULTS = { local: "本地检测到", continuum: "Continuum 检测到", "not-detected": "未检测到" } as const;
 const GAP_OWNERS = { plugin: "插件", action: "AWS-9 Action" } as const;
 type Stage = keyof typeof STAGES;
 type Result = keyof typeof RESULTS;
 type GapOwner = keyof typeof GAP_OWNERS;
-const AWS_RESULTS = { detected: "检测到", "not-detected": "未检测到" } as const;
-
-// A scan someone ran against the real AWS Security Agent on this case's repo/.
-// CI cannot repeat it, so it never decides the measured result; the report
-// shows it beside that result, with the job and findings to look it up by.
-interface AwsRun {
-	result: keyof typeof AWS_RESULTS;
-	at: string;
-	region: string;
-	code_review_job_id: string;
-	findings: string[];
-}
-
 interface Case {
 	id: string;
 	vector: string;
@@ -43,9 +32,7 @@ interface Case {
 	expected: Result;
 	sources: string[];
 	files: string[];
-	record?: string;
 	gap_owner?: GapOwner;
-	aws_run?: AwsRun;
 }
 
 interface Sensor {
@@ -62,6 +49,11 @@ interface Outcome {
 interface Verdict {
 	pass: boolean;
 	findings: string[];
+}
+
+interface ContinuumRecord {
+	scan: { scan_id: string; region: string; completed_at: string };
+	findings: { risk_level: string; name: string; code_locations: { file_path: string; line_start?: number }[] }[];
 }
 
 function frontmatter(markdown: string): Record<string, string> {
@@ -108,21 +100,11 @@ function readCase(id: string): Case {
 	for (const file of spec.files ?? []) {
 		if (!existsSync(join(CASES, id, "repo", file))) problems.push(`repo/${file} does not exist`);
 	}
-	if (spec.record !== undefined && !existsSync(join(CASES, id, spec.record))) {
-		problems.push(`record ${spec.record} does not exist`);
+	if (!existsSync(join(CASES, id, CONTINUUM_RECORD))) {
+		problems.push(`${CONTINUUM_RECORD} is missing. Run \`bun replay/continuum.ts --case ${id}\` (see replay/README.md)`);
 	}
 	if (spec.expected === "not-detected" && !((spec.gap_owner ?? "") in GAP_OWNERS)) {
 		problems.push(`a not-detected case names its gap_owner: ${Object.keys(GAP_OWNERS).join(" or ")}`);
-	}
-	const run = spec.aws_run;
-	if (run !== undefined) {
-		if (!(run.result in AWS_RESULTS)) {
-			problems.push(`aws_run.result "${run.result}" is not one of ${Object.keys(AWS_RESULTS).join(", ")}`);
-		}
-		if (!run.at || !run.region || !run.code_review_job_id) {
-			problems.push("aws_run names its at, region and code_review_job_id");
-		}
-		if (run.result === "detected" && !run.findings?.length) problems.push("a detected aws_run lists its findings");
 	}
 	if (problems.length > 0) throw new Error(`${path}:\n  ${problems.join("\n  ")}`);
 	return spec;
@@ -151,17 +133,21 @@ function measure(spec: Case, sensors: Sensor[]): Outcome {
 			evidence.push(`\`${sensor.id}\` 对 \`${file}\`：${verdict.pass ? "通过" : verdict.findings.join("；")}`);
 		}
 	}
-	let gateHolds = false;
-	if (spec.record !== undefined) {
-		const verdict = fire(GATE, join(dir, spec.record), dir);
-		gateHolds = !verdict.pass;
-		evidence.push(
-			verdict.pass
-				? "门禁放行了录制样本"
-				: `门禁拦下录制样本：${verdict.findings.map((finding) => finding.split(". ")[0]).join("；")}`,
-		);
-	}
-	const result: Result = detected ? "detected" : gateHolds ? "needs-aws" : "not-detected";
+	const recordPath = join(dir, CONTINUUM_RECORD);
+	const record = JSON.parse(
+		/^```json\n([\s\S]*?)\n```$/m.exec(readFileSync(recordPath, "utf-8"))?.[1] ?? "{}",
+	) as ContinuumRecord;
+	const reported = record.findings.map(({ risk_level, name, code_locations: [where] }) => {
+		const location = where ? ` @ ${where.file_path}${where.line_start === undefined ? "" : `:${where.line_start}`}` : "";
+		return `${risk_level} ${name.split(":")[0]}${location}`;
+	});
+	const verdict = fire(GATE, recordPath, dir);
+	evidence.push(
+		`Continuum \`${record.scan.scan_id}\`（${record.scan.region}，${record.scan.completed_at.slice(0, 10)}）报了 ${reported.length} 条${
+			reported.length > 0 ? `：${reported.join("、")}` : ""
+		}；门禁${verdict.pass ? "放行" : `拦下：${verdict.findings.map((finding) => /^\S+ \([A-Z]+\)/.exec(finding)?.[0] ?? finding.split(". ")[0]).join("、")}`}`,
+	);
+	const result: Result = detected ? "local" : verdict.pass ? "not-detected" : "continuum";
 	return { result, evidence };
 }
 
@@ -170,15 +156,9 @@ function cell(text: string): string {
 }
 
 function report(rows: { spec: Case; outcome: Outcome }[]): string {
-	const awsRun = ({ aws_run: run }: Case) =>
-		run === undefined
-			? "未跑"
-			: `${AWS_RESULTS[run.result]}（${run.at}，${run.region}，\`${run.code_review_job_id}\`${
-					run.findings?.length ? `：${run.findings.join("；")}` : ""
-				}）`;
 	const table = rows.map(
 		({ spec, outcome }) =>
-			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${RESULTS[outcome.result]} | ${cell(awsRun(spec))} | ${cell(outcome.evidence.join("；"))} |`,
+			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${RESULTS[outcome.result]} | ${cell(outcome.evidence.join("；"))} |`,
 	);
 	const gaps = rows
 		.filter(({ outcome }) => outcome.result === "not-detected")
@@ -190,12 +170,13 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 		"# 验证测试套件报告",
 		"",
 		"由 `bun replay/run.ts` 生成，不要手改。用例和预期见 `replay/cases/*/expected.md`。",
-		"「当前结果」是离线测出的，CI 每次重测；「AWS 实测」是对真实 AWS Security Agent 跑过的记录，CI 不重跑。",
+		"Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑的差分 code review，记录在各用例的",
+		"`security-scan-result.md`。CI 不调用 AWS，只用插件门禁重新判一遍这些真实记录。",
 		"",
 		`共 ${rows.length} 个用例：${counts}。`,
 		"",
-		"| 测试向量 | 检测环节 | 当前结果 | AWS 实测 | 证据 |",
-		"| --- | --- | --- | --- | --- |",
+		"| 测试向量 | 检测环节 | 当前结果 | 证据 |",
+		"| --- | --- | --- | --- |",
 		...table,
 		"",
 		"## 未检测到",
