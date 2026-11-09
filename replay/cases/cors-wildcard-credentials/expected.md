@@ -14,14 +14,17 @@
 
 ## 现在的实现能否检测到
 
-待补。插件和 core 没有 security 类 sensor 覆盖 `src/cors.ts`，离线的本地检查看不到它。
-`security-scan-result.md` 由开发·EC2 跑 `bun replay/continuum.ts --case cors-wildcard-credentials` 之后写入。
-与 `cors-wildcard-credentials-fixed` 成对。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `src/cors.ts`，离线的本地检查看不到它。与 `cors-wildcard-credentials-fixed` 成对。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的 AWS Continuum 差分 code review（job `cj-83aa88e6-59be-4b27-8511-e136a832add3`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-33498a67-679b-487c-89fb-7f9050014712`：HIGH，SECURITY_MISCONFIGURATION: handlePreflight emits wildcard Access-Control-Allow-Origin with Access-Control-Allow-Credentials: true, no Origin allowlist or Vary，位置 `src/cors.ts:10`。
 
 ## 证据
 
-`bun replay/run.ts` 离线复验：对 `src/cors.ts` 跑所有覆盖它的 security 类 sensor，再用插件的
-`security-findings-gate` 判 `security-scan-result.md`。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/cors.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {

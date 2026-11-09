@@ -33,7 +33,12 @@ interface Case {
 	sources: string[];
 	files: string[];
 	gap_owner?: GapOwner;
+	// A paired case's counterpart: `<id>` has the vulnerability, `<id>-fixed`
+	// is the same code with it removed, so the gate is scored on both.
+	pair?: string;
 }
+
+const isFixed = (spec: Case) => spec.pair !== undefined && spec.id.endsWith("-fixed");
 
 interface Sensor {
 	id: string;
@@ -103,7 +108,13 @@ function readCase(id: string): Case {
 	if (!existsSync(join(CASES, id, CONTINUUM_RECORD))) {
 		problems.push(`${CONTINUUM_RECORD} is missing. Run \`bun replay/continuum.ts --case ${id}\` (see replay/README.md)`);
 	}
-	if (spec.expected === "not-detected" && !((spec.gap_owner ?? "") in GAP_OWNERS)) {
+	if (spec.pair !== undefined && spec.pair !== (id.endsWith("-fixed") ? id.slice(0, -"-fixed".length) : `${id}-fixed`)) {
+		problems.push(`pair "${spec.pair}" must name ${id.endsWith("-fixed") ? "the case without -fixed" : `${id}-fixed`}`);
+	}
+	if (spec.pair !== undefined && !existsSync(join(CASES, spec.pair, "expected.md"))) {
+		problems.push(`pair ${spec.pair} does not exist`);
+	}
+	if (spec.expected === "not-detected" && !isFixed(spec) && !((spec.gap_owner ?? "") in GAP_OWNERS)) {
 		problems.push(`a not-detected case names its gap_owner: ${Object.keys(GAP_OWNERS).join(" or ")}`);
 	}
 	if (problems.length > 0) throw new Error(`${path}:\n  ${problems.join("\n  ")}`);
@@ -156,16 +167,25 @@ function cell(text: string): string {
 }
 
 function report(rows: { spec: Case; outcome: Outcome }[]): string {
+	const blocked = ({ outcome }: { outcome: Outcome }) => outcome.result !== "not-detected";
+	const resultLabel = ({ spec, outcome }: { spec: Case; outcome: Outcome }) =>
+		isFixed(spec) ? (blocked({ outcome }) ? "误拦（修好版）" : "放行（修好版）") : RESULTS[outcome.result];
 	const table = rows.map(
-		({ spec, outcome }) =>
-			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${RESULTS[outcome.result]} | ${cell(outcome.evidence.join("；"))} |`,
+		(row) =>
+			`| [${cell(row.spec.vector)}](cases/${row.spec.id}/expected.md) | ${STAGES[row.spec.stage]} | ${resultLabel(row)} | ${cell(row.outcome.evidence.join("；"))} |`,
 	);
-	const gaps = rows
-		.filter(({ outcome }) => outcome.result === "not-detected")
+	const problemRows = rows.filter(({ spec }) => !isFixed(spec));
+	const fixedRows = rows.filter(({ spec }) => isFixed(spec));
+	const caught = problemRows.filter(blocked).length;
+	const falseAlarms = fixedRows.filter(blocked).length;
+	const pairs = fixedRows.map((fixed) => {
+		const problem = rows.find(({ spec }) => spec.id === fixed.spec.pair);
+		return `| ${cell(problem?.spec.vector ?? fixed.spec.pair ?? "")} | ${problem ? resultLabel(problem) : "缺失"} | ${resultLabel(fixed)} |`;
+	});
+	const gaps = problemRows
+		.filter((row) => !blocked(row))
 		.map(({ spec }) => `- ${spec.vector}。建议补在：${GAP_OWNERS[spec.gap_owner as GapOwner]}。`);
-	const counts = Object.entries(RESULTS)
-		.map(([result, label]) => `${label} ${rows.filter(({ outcome }) => outcome.result === result).length}`)
-		.join("，");
+	const wrong = fixedRows.filter(blocked).map(({ spec }) => `- ${spec.vector}。`);
 	return [
 		"# 验证测试套件报告",
 		"",
@@ -173,7 +193,17 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 		"Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑的差分 code review，记录在各用例的",
 		"`security-scan-result.md`。CI 不调用 AWS，只用插件门禁重新判一遍这些真实记录。",
 		"",
-		`共 ${rows.length} 个用例：${counts}。`,
+		`共 ${rows.length} 个用例：${problemRows.length} 个有问题的版本，${fixedRows.length} 个修好的版本。`,
+		"",
+		"## 拦截率和误报率",
+		"",
+		"| 指标 | 结果 |",
+		"| --- | --- |",
+		`| 拦截率：有问题的版本被拦下 | ${caught} / ${problemRows.length} |`,
+		`| 误报率：修好的版本被误拦 | ${falseAlarms} / ${fixedRows.length} |`,
+		"",
+		...(pairs.length > 0 ? ["| 成对场景 | 有问题版 | 修好版 |", "| --- | --- | --- |", ...pairs, ""] : []),
+		"## 全部用例",
 		"",
 		"| 测试向量 | 检测环节 | 当前结果 | 证据 |",
 		"| --- | --- | --- | --- |",
@@ -182,6 +212,10 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 		"## 未检测到",
 		"",
 		...(gaps.length > 0 ? gaps : ["无。"]),
+		"",
+		"## 误拦",
+		"",
+		...(wrong.length > 0 ? wrong : ["无。"]),
 		"",
 	].join("\n");
 }

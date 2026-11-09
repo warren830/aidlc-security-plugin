@@ -13,16 +13,17 @@ diff scan，`security-findings-gate` 在 finding 没处理之前不让门禁通�
 
 ## 现在的实现能否检测到
 
-待补。插件和 core 没有 security 类 sensor 覆盖 `src/greeting.ts`，离线的本地检查看不到它。
-Continuum 这一侧待跑：本用例还没有 `security-scan-result.md`，由开发·EC2 跑完
-`bun replay/continuum.ts --case xss-template-literal` 之后写入。本用例与
-`xss-template-literal-fixed` 是同一漏洞的"有问题版 / 修好版"成对样例，修好版用于测误报率。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `src/greeting.ts`，离线的本地检查看不到它。与 `xss-template-literal-fixed` 成对。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的 AWS Continuum 差分 code review（job `cj-57ff77f1-b925-4854-a298-bb6e9a243f43`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-636f08f5-3bd6-483f-9c71-41c5c520ee3d`：HIGH，CROSS_SITE_SCRIPTING: Reflected XSS: renderGreeting interpolates unescaped req.query.name into HTML response，位置 `src/greeting.ts:12`。
 
 ## 证据
 
-`bun replay/run.ts` 离线复验：对 `src/greeting.ts` 跑所有覆盖它的 security 类 sensor（预期无覆盖），
-再用插件的 `security-findings-gate` 判 `security-scan-result.md`。Continuum 跑完后
-本文件的"现在的实现能否检测到"一节会改成实测结论。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/greeting.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {

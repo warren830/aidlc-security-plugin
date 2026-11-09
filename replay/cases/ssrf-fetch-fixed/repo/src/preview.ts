@@ -1,6 +1,7 @@
 // Fixed version: the destination URL is parsed and checked against an
 // explicit allowlist of public hosts and the http/https schemes. Requests
-// for loopback, link-local, or any other internal destination fail closed.
+// for loopback, link-local, or any other internal destination fail closed,
+// and so does a redirect, which would leave the checked host.
 export interface PreviewRequest {
 	body: { url: string };
 }
@@ -16,6 +17,6 @@ export async function previewLink(req: PreviewRequest, res: PreviewResponse): Pr
 	if (url.protocol !== "https:" || !ALLOWED_HOSTS.has(url.hostname)) {
 		throw new Error("preview target is not on the allowlist");
 	}
-	const response = await fetch(url);
+	const response = await fetch(url, { redirect: "error" });
 	res.send(await response.text());
 }

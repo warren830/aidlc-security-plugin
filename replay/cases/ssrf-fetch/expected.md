@@ -14,14 +14,19 @@ AWS-13 incidents.md 里 Bedrock AgentCore Starter Toolkit 的 CVE-2026-106032 �
 
 ## 现在的实现能否检测到
 
-待补。插件和 core 没有 security 类 sensor 覆盖 `src/preview.ts`，离线的本地检查看不到它。
-`security-scan-result.md` 由开发·EC2 跑 `bun replay/continuum.ts --case ssrf-fetch` 之后写入。
-与 `ssrf-fetch-fixed` 成对。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `src/preview.ts`，离线的本地检查看不到它。与 `ssrf-fetch-fixed` 成对。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的 AWS Continuum 差分 code review（job `cj-4be8bd14-e60e-4448-a6b1-2094d21d4eb5`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-3222cd16-2c77-4fdf-8cec-0f4ebb8bf924`：HIGH，SERVER_SIDE_REQUEST_FORGERY: previewLink fetches attacker-controlled req.body.url with no validation (full-read SSRF)，位置 `src/preview.ts:12`。
+- `f-d0305d03-af76-4836-aa17-ac1ce4f9458f`：MEDIUM，CROSS_SITE_SCRIPTING: Remote response body echoed unescaped via res.send (reflected XSS)，位置 `src/preview.ts:15`。
+- `f-e7fa4a06-6983-406d-8c26-fe25ebdb86e4`：HIGH，SERVER_SIDE_REQUEST_FORGERY: previewLink fetches unvalidated user-supplied URL server-side and returns the body (full SSRF)，位置 `src/preview.ts:12`。
 
 ## 证据
 
-`bun replay/run.ts` 离线复验：对 `src/preview.ts` 跑所有覆盖它的 security 类 sensor，再用插件的
-`security-findings-gate` 判 `security-scan-result.md`。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/preview.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {

@@ -12,13 +12,15 @@
 
 ## 现在的实现能否检测到
 
-待补。本用例与 `insecure-randomness` 成对，预期结果是 `not-detected`。
-`security-scan-result.md` 由开发·EC2 跑 `bun replay/continuum.ts --case insecure-randomness-fixed` 之后写入。
+放行，符合预期。Continuum 没有报出 HIGH 及以上的 finding，插件门禁不拦。插件和 core 没有 security 类 sensor 覆盖 `src/tokens.ts`，离线的本地检查看不到它。与 `insecure-randomness` 成对。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的 AWS Continuum 差分 code review（job `cj-50af2257-2bcd-49dc-8712-9506c8e6d9c7`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它没有报出任何 finding。
 
 ## 证据
 
-`bun replay/run.ts` 离线复验：对 `src/tokens.ts` 跑所有覆盖它的 security 类 sensor，再用插件的
-`security-findings-gate` 判 `security-scan-result.md`。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/tokens.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {
@@ -26,7 +28,6 @@
   "stage": "code-generation-gate",
   "expected": "not-detected",
   "pair": "insecure-randomness",
-  "gap_owner": "plugin",
   "sources": [
     "https://www.veracode.com/blog/genai-code-security-report/"
   ],

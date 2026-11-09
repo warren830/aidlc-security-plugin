@@ -13,14 +13,17 @@
 
 ## 现在的实现能否检测到
 
-待补。插件和 core 没有 security 类 sensor 覆盖 `src/reports.ts`，离线的本地检查看不到它。
-`security-scan-result.md` 由开发·EC2 跑 `bun replay/continuum.ts --case path-traversal` 之后写入。
-与 `path-traversal-fixed` 成对，修好版用于测误报率。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `src/reports.ts`，离线的本地检查看不到它。与 `path-traversal-fixed` 成对。
+
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的 AWS Continuum 差分 code review（job `cj-5c195f54-5cf7-4419-aa87-8887957753ac`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-0bab57b9-623f-45ed-ac94-d0f07457c0ba`：HIGH，PATH_TRAVERSAL: downloadReport joins user-supplied filename into REPORTS_DIR without containment check (arbitrary file read)，位置 `src/reports.ts:9`。
 
 ## 证据
 
-`bun replay/run.ts` 离线复验：对 `src/reports.ts` 跑所有覆盖它的 security 类 sensor，再用插件的
-`security-findings-gate` 判 `security-scan-result.md`。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/reports.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {

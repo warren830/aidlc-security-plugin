@@ -20,7 +20,8 @@
 | `expected` | `local`、`continuum` 或 `not-detected` |
 | `sources` | 场景的公开出处 URL |
 | `files` | `repo/` 下承载场景的文件，相对 `repo/` |
-| `gap_owner` | `expected` 是 `not-detected` 时必填：`plugin` 或 `action`（AWS-9） |
+| `gap_owner` | `expected` 是 `not-detected` 时必填（修好版不用填）：`plugin` 或 `action`（AWS-9） |
+| `pair` | 可选。成对用例的另一半：`<id>` 是有问题版，`<id>-fixed` 是只修掉问题点的修好版，两边互相指向 |
 
 ## 结果怎么算
 
@@ -31,7 +32,10 @@ runner 对每个用例做两件事：
 2. 对 `security-scan-result.md` 运行插件的 `security-findings-gate`。门禁拦下，结果就是 `continuum`：
    Continuum 报出了 HIGH 及以上的 finding，插件门禁据此拦下。
 
-两步都没拦下，结果就是 `not-detected`。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
+两步都没拦下，结果就是 `not-detected`。
+
+修好版（带 `pair`、名字以 `-fixed` 结尾）被拦下算误拦。报告开头给出拦截率（有问题的版本被拦下几个）
+和误报率（修好版被误拦几个），以及每对场景两边的结果。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
 证据里会列出它报的等级。
 
 结果和 `expected` 不一致时，`run.ts` 失败。缺口不能靠改报告藏起来；补上缺口以后，
