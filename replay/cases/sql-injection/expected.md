@@ -12,37 +12,29 @@ Agent diff scan，`security-findings-gate` 在 finding 没处理之前不让门�
 
 ## 现在的实现能否检测到
 
-需要 AWS。扫描这一步要调用 Security Agent，离线跑不了。门禁这一侧用录制样本
-`security-scan-result.md` 演示：样本里有一条 ACTIVE 的 HIGH finding，门禁应该拦下。
-没有任何 security 类 sensor 直接检查 `src/users.ts`。
+Continuum 检测到，插件门禁拦下。插件和 core 没有 security 类 sensor 覆盖 `src/users.ts`，离线的本地检查看不到它。
 
-AWS 实测：检测到。2026-11-08 在 us-east-1 的 agent space `aidlc-bench` 上，对和 `repo/`
-完全相同的代码跑了一次 code review（job `cj-a47ab279-7b95-4c51-9601-4df49c8d6527`）。
-它报出 finding `f-48befbf1-5da0-433e-923c-7db4086c2727`：`SQL_INJECTION`，HIGH，置信度 HIGH，
-ACTIVE，位置 `users.ts:6`。这一条和录制样本里的 f-901 等级相同，所以真实结果写进记录后，门禁同样会拦下。
-这次是直接调用 `securityagent` API 跑的整库 code review，没有经过插件 Step 4b 的 MCP diff scan，
-也不在插件默认的 ap-southeast-1。
+2026-11-09 用 `replay/continuum.ts` 在 ap-southeast-1 对 `repo/` 跑了一次真实的
+AWS Continuum 差分 code review（job `cj-a92c256f-4a89-41de-957e-0228dac69d6d`，基线是空仓库，diff 新增了 `repo/` 下的全部文件）。它报出：
+
+- `f-dc04b1d9-e96a-4421-8edd-9659d380f7dc`：HIGH，SQL_INJECTION: findUser interpolates untrusted `name` into SQL string literal (SQL injection)，位置 `src/users.ts:5`。
 
 ## 证据
 
-`bun replay/run.ts --check` 对 `repo/src/users.ts` 跑了所有覆盖它的 security 类
-sensor，又对录制样本跑了门禁 worker。实际结果和下面的 `expected` 不一致时，
-命令失败。输出见 `replay/REPORT.md` 里的对应行。
+`security-scan-result.md` 是 Continuum 这次的原始结果，按插件门禁读的记录格式写入。`bun replay/run.ts --check`
+对 `src/users.ts` 跑了所有覆盖它们的 security 类 sensor，又用插件的 `security-findings-gate` 判了这份记录。实际结果和下面的
+`expected` 不一致时，命令失败。输出见 `replay/REPORT.md` 里的对应行。
 
 ```json
 {
   "vector": "SQL 注入",
   "stage": "code-generation-gate",
-  "expected": "needs-aws",
-  "sources": ["https://www.veracode.com/blog/genai-code-security-report/"],
-  "files": ["src/users.ts"],
-  "record": "security-scan-result.md",
-  "aws_run": {
-    "result": "detected",
-    "at": "2026-11-08",
-    "region": "us-east-1",
-    "code_review_job_id": "cj-a47ab279-7b95-4c51-9601-4df49c8d6527",
-    "findings": ["SQL_INJECTION HIGH at users.ts:6 (f-48befbf1-5da0-433e-923c-7db4086c2727)"]
-  }
+  "expected": "continuum",
+  "sources": [
+    "https://www.veracode.com/blog/genai-code-security-report/"
+  ],
+  "files": [
+    "src/users.ts"
+  ]
 }
 ```
