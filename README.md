@@ -41,6 +41,8 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
 `bun run test` checks, for the Claude Code and Kiro IDE projections:
 
 - the shipped validator accepts the plugin;
+- the threat model stage's Step 6 lists the sections of the plugin's
+  threat model template, in the same order;
 - each projection composes into a scratch install with no drops, with the
   threat model stage in Inception, the gate check on Code Generation, and the
   baseline and persona fragments on the DevSecOps agent;

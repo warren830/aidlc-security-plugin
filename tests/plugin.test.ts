@@ -47,6 +47,7 @@ interface GraphNode {
 const kit = (await import(join(upstreamDir(), "tests", "harness", "plugin-kit.ts"))) as PluginKit;
 
 const HARNESS_DIR: Record<Harness, string> = { claude: ".claude", "kiro-ide": ".kiro" };
+const TEMPLATE = join("tools", "data", "templates", "security-threat-model.md");
 
 function pluginTool(...args: string[]): ReturnType<typeof spawnSync> {
 	return spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "plugin-tool.ts"), ...args], {
@@ -57,6 +58,16 @@ function pluginTool(...args: string[]): ReturnType<typeof spawnSync> {
 
 test("the shipped validator accepts the authored plugin root", () => {
 	expect(kit.validatePluginContent(PLUGIN_ROOT)).toEqual([]);
+});
+
+// The agent writes the sections Step 6 lists, and required-sections checks the
+// template's, so the two lists must not drift apart.
+test("the threat model stage's Step 6 lists its template's sections, in order", () => {
+	const stage = readFileSync(join(PLUGIN_ROOT, "stages", "inception", "security-threat-model.md"), "utf-8");
+	const stepSix = /^### Step 6:[\s\S]*?(?=^### )/m.exec(stage)?.[0] ?? "";
+	const named = [...stepSix.matchAll(/`(## [^`]+)`/g)].map(([, heading]) => heading.replace(/\s+/g, " "));
+	const template = readFileSync(join(PLUGIN_ROOT, TEMPLATE), "utf-8");
+	expect([...new Set(named)]).toEqual(template.match(/^## .+$/gm) ?? []);
 });
 
 for (const harness of ["claude", "kiro-ide"] as const) {

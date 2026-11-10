@@ -132,23 +132,48 @@ comes back. Each threat has `threatId`, `statement`, `severity`, `status`,
 
 ### Step 6: Write the threat model
 
-Give each threat its own ID, `T-` and three digits, in the order `## Threats`
-lists them: `T-001` for the first, `T-002` for the next. Number the
-mitigations across the file the same way, `M-001` onwards. Code Generation
-cites these IDs, which a person can read, in place of the service's
-`threatId`, which belongs to this one review.
+Give each threat its own ID, `T-` and three digits, in the order the file
+lists the threats' entries: `T-001` for the first, `T-002` for the next. The
+six STRIDE sections come in a fixed order, so the numbering runs through them
+in that order. Number the mitigations across the file the same way, `M-001`
+onwards. Code Generation cites these IDs, which a person can read, in place
+of the service's `threatId`, which belongs to this one review.
 
 Write `security-threat-model.md` in this stage's record folder with these
-sections:
+sections, in this order:
 
 - `## Scope`: the specs the review read, by their record paths
   (`inception/requirements-analysis/requirements.md` and so on), and the
   review's `scan_id`.
-- `## Threats`: one entry per threat, highest severity first, each led by its
-  ID. Give its statement, severity, STRIDE categories, the components from
-  `components.md` or the contracts from `contract-summary.md` it affects, and
-  the service's recommendation. Name the component a threat touches by its
-  name in `components.md`. When it touches none, say so.
+- `## Assumptions`: the premises the threats depend on that the specs do not
+  state, such as where a database is reachable from, how users sign in, or
+  what a third party is trusted to do. Write one line for each, led by its
+  ID, `A-001` onwards. The person confirms them at the approval gate.
+- `## Trust boundaries`: one line for each place where data crosses between
+  parties of different trust. Name the boundary and what sits on each side,
+  and call each component by its name in `components.md`.
+- `## Asset flows`: one line for each asset the design handles, such as data,
+  credentials and keys. Include every asset that a threat's `impactedAssets`
+  names. Give the path the asset takes between components, and the trust
+  boundaries it crosses.
+- `## Spoofing`, `## Tampering`, `## Repudiation`, `## Information disclosure`,
+  `## Denial of service` and `## Elevation of privilege`: the threats, by
+  STRIDE category. The service's `stride` values name the same categories,
+  such as `INFORMATION_DISCLOSURE`.
+  - Give each threat one entry, under the first of its categories in this
+    order, with the highest severity first in each section. Lead the entry
+    with the threat's ID. Give its statement, severity, STRIDE categories,
+    the components from `components.md` or the contracts from
+    `contract-summary.md` it affects, the trust boundary it crosses, and the
+    service's recommendation. Name each component by its name in
+    `components.md`. When the threat touches no component, or crosses no
+    trust boundary, say so.
+  - Under each other category of the threat, write only its ID and the
+    section that holds its entry.
+  - When a category has no threat, write one line that says the review found
+    none in it. Never add a threat that the review did not return.
+  - When the service gives a threat no STRIDE category, choose the one that
+    fits and say in the entry that you chose it.
 - `## Mitigations for Construction`: for each CRITICAL or HIGH threat, one or
   more controls the code must have, one line each. Lead each line with its
   mitigation ID and the threat's ID, such as `M-001 (T-001)`. Code Generation
@@ -212,9 +237,12 @@ Use the stage-protocol.md completion template:
 
 - The number of threats by severity, and the CRITICAL and HIGH ones by ID and
   statement.
+- The assumptions, each by its ID and in one line.
 - The review path: `<record>/inception/security-threat-model/`.
-- A structured approval question: Approve (continue to the next stage), or
-  Request Changes (say what to change).
+- A structured approval question that asks the person to confirm the
+  assumptions: Approve (the assumptions hold, so continue to the next stage),
+  or Request Changes (say what to change, such as an assumption that does not
+  hold).
 
 ## Sensors
 
@@ -225,6 +253,16 @@ Imports: `required-sections`, `upstream-coverage`.
 
 Upstream targets: `requirements`, `components`. The `## Scope` section's
 record paths are the citations `upstream-coverage` looks for.
+
+`required-sections` checks that the file has each `##` heading of the
+plugin's template,
+`{{HARNESS_DIR}}/tools/data/templates/security-threat-model.md`. Those are the
+12 sections of Step 6. A team template of the same name in the space's
+memory, `aidlc/spaces/<space>/memory/templates/security-threat-model.md`,
+replaces it whole. Then write the team template's sections in place of Step
+6's. The check is advisory. When the Step 7 report names a missing section,
+add the section and run the report again. At the gate, the person sees each
+section that is still missing and decides.
 
 ## Learn
 
