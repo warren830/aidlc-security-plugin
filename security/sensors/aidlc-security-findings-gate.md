@@ -88,11 +88,12 @@ The coverage mode decides what a gap does:
 Both modes come from `.aidlc-security.json` at the project root, which is the
 working directory the dispatcher gives the worker. The file holds
 `override_mode` (`strict` or `lenient`) and `coverage_mode` (`off`, `warn` or
-`block`). Without the file or a key, the modes are strict and warn. In strict
-mode the gate ignores every `override` in the record. A person accepts a
-blocking finding or threat only through the engine's **Override blocking
-sensors** choice at the gate, which the engine never offers under Construction
-autonomy. In lenient mode a valid `override` accepts its finding or threat.
+`block`). Without the file, the modes are strict and warn, and a file that
+leaves out a key keeps that key's default. In strict mode the gate ignores
+every `override` in the record. A person accepts a blocking finding or threat
+only through the engine's **Override blocking sensors** choice at the gate,
+which the engine never offers under Construction autonomy. In lenient mode a
+valid `override` accepts its finding or threat.
 Both fires fail when the file exists but cannot be read, is not valid JSON,
 holds a key other than `override_mode` and `coverage_mode`, or sets a value
 its key does not take.

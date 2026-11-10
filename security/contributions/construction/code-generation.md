@@ -26,10 +26,12 @@ fragments:
 
 When `<record>/inception/security-threat-model/security-threat-model.md`
 exists, read its `## Threats` and `## Mitigations for Construction` sections.
-List the threats that touch the components this unit builds, each with its
-recommendation, and put that list in the Step 4 delegation prompt beside the
-unit's design artifacts. When the file does not exist, the plan skipped the
-threat model: go on without it.
+List the threats that touch the components this unit builds, each with its ID
+(`T-001`), its recommendation and its mitigations, and put that list in the
+Step 4 delegation prompt beside the unit's design artifacts. Ask the developer
+agent to say which code and which test carry each mitigation, for Step 4c.
+When the file does not exist, the plan skipped the threat model: go on without
+it.
 
 ## fragment: after-step:4
 
@@ -89,7 +91,7 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
 
    ```json
    {
-     "schema_version": 1,
+     "schema_version": 2,
      "scan": {
        "scan_id": "scan-5e6f7a8b",
        "scan_type": "DIFF",
@@ -150,9 +152,60 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
        carried forward.
 8. **Going on without a scan.** When the person chooses that, write the record
    with `not_run` in place of `scan` and `findings`:
-   `{ "schema_version": 1, "not_run": { "reason": "<their words>", "at": "<UTC time>" } }`.
+   `{ "schema_version": 2, "not_run": { "reason": "<their words>", "at": "<UTC time>" } }`.
    The gate then refuses, and the engine offers Fix findings or Override
    blocking sensors. The engine records their override on the gate.
+
+### Step 4c (security): Record the threat coverage
+
+Skip this step when `security-threat-model.md` does not exist, when the record
+holds `not_run`, or when `.aidlc-security.json` sets `coverage_mode` to `off`.
+Otherwise record how this unit answers each threat at or above HIGH in
+`## Threats`, after Step 4b's last scan and each time you write the record
+again. Add `threat_coverage` beside `scan` in the record's `json` block, with
+one entry per threat:
+
+```json
+"threat_coverage": {
+  "threat_model_scan_id": "<scan.scan_id of security-threat-model.md>",
+  "threats": [
+    { "threat_id": "T-001", "status": "MITIGATED", "evidence": [
+      { "kind": "code", "file_path": "src/auth.ts", "line_start": 12, "line_end": 20 },
+      { "kind": "test", "file_path": "tests/auth.test.ts", "name": "rejects a token signed with alg none" },
+      { "kind": "finding", "finding_id": "<findingId>" }
+    ] },
+    { "threat_id": "T-002", "status": "NOT_APPLICABLE", "reason": "This unit builds none of <components>." }
+  ]
+}
+```
+
+- **MITIGATED.** The unit has the control that `## Mitigations for
+  Construction` names. Cite the code that has it and the test that proves it,
+  by their paths from the root of the repository Step 4b scanned, or a finding
+  of this record by its `finding_id`. The gate checks that each path is
+  relative, not that the file exists.
+- **NOT_APPLICABLE.** The unit builds none of the components the threat
+  touches. Say so in `reason`.
+- **ACCEPTED.** Only the person can accept a threat this unit leaves open.
+  Ask them and record their answer the way item 7 of Step 4b does for a
+  finding, then add
+  `"override": { "by": "<their name>", "reason": "<their words>", "at": "<the UTC time of their answer>" }`.
+  Never write one the person did not give. In lenient mode that override
+  counts. In strict mode the gate ignores it, so tell the person that when
+  `coverage_mode` is `block` they accept the threat at the gate by choosing
+  Override blocking sensors.
+
+Then run the gate's worker from the project root:
+
+```bash
+bun {{HARNESS_DIR}}/tools/aidlc-sensor-security-findings-gate.ts --output-path <code-generation-record>/security-scan-result.md
+```
+
+Each line of its `coverage_gaps` names a threat the record does not cover, or
+an entry the gate cannot use. Fix what you can and run it again. Under
+`coverage_mode` `warn`, the default, a gap does not hold the gate, and the gate
+shows it nowhere else, so tell the person each remaining line in one sentence.
+Under `block`, each gap holds the gate like a finding.
 
 ## fragment: in:Sensors
 
@@ -160,6 +213,10 @@ The security plugin adds `security-findings-gate`, a blocking gate check. On
 each unit's `security-scan-result.md` it holds the gate while the diff scan is
 not `COMPLETED`, or while a finding at or above HIGH is not `RESOLVED`. An
 override in the record clears a finding only in lenient mode, which
-`.aidlc-security.json` at the project root sets. On `code-generation-plan.md`
-it holds the gate when no scan record sits beside the plan. It reads only that
-record and `.aidlc-security.json`.
+`.aidlc-security.json` at the project root sets. It also lists in
+`coverage_gaps` each threat at or above HIGH in the threat model that the
+record's `threat_coverage` does not cover, and holds the gate on those only
+when `.aidlc-security.json` sets `coverage_mode` to `block`. On
+`code-generation-plan.md` it holds the gate when no scan record sits beside
+the plan. It reads only that record, the threat model and
+`.aidlc-security.json`.
