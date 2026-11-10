@@ -115,35 +115,53 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 			expect(stage?.requires_stage).toContain("security-threat-model");
 		});
 
-		test("the dispatcher's fire blocks a recorded override without a config, and passes it with a lenient one", () => {
-			const fixtures = join(REPO_ROOT, "tests", "fixtures");
-			const record = join(project, "aidlc-docs", "construction", "unit-a", "code-generation", "security-scan-result.md");
+		const fixtures = join(REPO_ROOT, "tests", "fixtures");
+		const placeRecord = (unit: string, fixture: string): string => {
+			const record = join(project, "aidlc-docs", "construction", unit, "code-generation", "security-scan-result.md");
 			mkdirSync(dirname(record), { recursive: true });
-			copyFileSync(join(fixtures, "scan-records", "override-accepted", "security-scan-result.md"), record);
-			const fire = (): string => {
-				const run = spawnSync(
-					process.execPath,
-					[
-						join(installed, "tools", "aidlc-sensor.ts"),
-						"fire",
-						"security-findings-gate",
-						"--stage",
-						"code-generation",
-						"--output-path",
-						record,
-					],
-					{
-						cwd: project,
-						encoding: "utf-8",
-						env: { ...process.env, AIDLC_PROJECT_DIR: project, CLAUDE_PROJECT_DIR: project },
-					},
-				);
-				expect(run.status, `${run.stdout}${run.stderr}`).toBe(0);
-				return (JSON.parse(run.stdout) as { result: string }).result;
-			};
-			expect(fire()).toBe("failed");
-			copyFileSync(join(fixtures, "projects", "lenient", ".aidlc-security.json"), join(project, ".aidlc-security.json"));
-			expect(fire()).toBe("passed");
+			copyFileSync(fixture, record);
+			return record;
+		};
+		const useConfig = (name: string) =>
+			copyFileSync(join(fixtures, "projects", name, ".aidlc-security.json"), join(project, ".aidlc-security.json"));
+		const fire = (record: string): string => {
+			const run = spawnSync(
+				process.execPath,
+				[
+					join(installed, "tools", "aidlc-sensor.ts"),
+					"fire",
+					"security-findings-gate",
+					"--stage",
+					"code-generation",
+					"--output-path",
+					record,
+				],
+				{
+					cwd: project,
+					encoding: "utf-8",
+					env: { ...process.env, AIDLC_PROJECT_DIR: project, CLAUDE_PROJECT_DIR: project },
+				},
+			);
+			expect(run.status, `${run.stdout}${run.stderr}`).toBe(0);
+			return (JSON.parse(run.stdout) as { result: string }).result;
+		};
+
+		test("the dispatcher's fire blocks a recorded override without a config, and passes it with a lenient one", () => {
+			const record = placeRecord("unit-a", join(fixtures, "scan-records", "override-accepted", "security-scan-result.md"));
+			expect(fire(record)).toBe("failed");
+			useConfig("lenient");
+			expect(fire(record)).toBe("passed");
+		});
+
+		test("the dispatcher's fire finds the threat model, and holds the gate on a threat with no evidence only in block mode", () => {
+			const model = join(project, "aidlc-docs", "inception", "security-threat-model", "security-threat-model.md");
+			mkdirSync(dirname(model), { recursive: true });
+			copyFileSync(join(fixtures, "records", "threat-model", "inception", "security-threat-model", "security-threat-model.md"), model);
+			const record = placeRecord("unit-b", join(fixtures, "scan-records", "clean", "security-scan-result.md"));
+			useConfig("coverage-warn");
+			expect(fire(record)).toBe("passed");
+			useConfig("coverage-block");
+			expect(fire(record)).toBe("failed");
 		});
 
 		test("gives the core DevSecOps agent the security baseline and the AWS Security Agent guidance", () => {
