@@ -53,6 +53,10 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
 - the same dispatcher fires the check on a unit whose threat model has a HIGH
   threat with no evidence, and the check passes it in warn mode and blocks it
   in block mode;
+- the same dispatcher fires core's `required-sections` on the threat model,
+  against the template that compose put in the install: a complete threat
+  model passes, and one without `## Repudiation` fails, and the detail file
+  names that section;
 - the gate check's verdict for every committed record in
   `tests/fixtures/scan-records/` and in the record trees under
   `tests/fixtures/records/`, through the worker as a subprocess and through
