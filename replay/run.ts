@@ -1,11 +1,13 @@
 // Runs every case in replay/cases/ against the detection this repository ships
-// today, and writes replay/REPORT.md. Three probes, all offline:
+// today, and writes replay/REPORT.md. Four probes, all offline:
 //   - every security-category sensor, core's or the plugin's, whose `matches`
 //     covers one of the case's files, fired on that file;
 //   - the security-findings-gate worker on the case's security-scan-result.md,
 //     the real AWS Continuum output that replay/continuum.ts recorded;
 //   - for a case with threat-coverage.json, the same worker on that record
-//     with the coverage merged in, beside the case's threat model.
+//     with the coverage merged in, beside the case's threat model;
+//   - for a case with a threat model, core's required-sections worker on it,
+//     against the plugin's threat model template.
 // A case's measured result must equal the `expected` its expected.md declares,
 // so a gap cannot be hidden by editing the report, and closing one fails the
 // run until expected.md says so.
@@ -21,6 +23,8 @@ const REPLAY = join(REPO_ROOT, "replay");
 const CASES = join(REPLAY, "cases");
 const REPORT = join(REPLAY, "REPORT.md");
 const GATE = join(PLUGIN_ROOT, "tools", "aidlc-sensor-security-findings-gate.ts");
+const SECTIONS = join(upstreamDir(), "core", "tools", "aidlc-sensor-required-sections.ts");
+const TEMPLATES = join(PLUGIN_ROOT, "tools", "data", "templates");
 const THREAT_MODEL = "security-threat-model.md";
 const COVERAGE = "threat-coverage.json";
 
@@ -29,6 +33,7 @@ const RESULTS = {
 	local: "本地检测到",
 	continuum: "Continuum 检测到",
 	coverage: "威胁覆盖检查拦下",
+	sections: "必备章节检查拦下",
 	"not-detected": "未检测到",
 } as const;
 const GAP_OWNERS = { plugin: "插件", action: "AWS-9 Action" } as const;
@@ -65,6 +70,13 @@ interface Verdict {
 	pass: boolean;
 	findings: string[];
 	coverage_mode?: string | null;
+}
+
+interface SectionsVerdict {
+	pass: boolean;
+	template?: "applied" | "ineligible";
+	template_expected: string[];
+	template_missing: string[];
 }
 
 interface ContinuumRecord {
@@ -135,13 +147,13 @@ function readCase(id: string): Case {
 	return spec;
 }
 
-function fire(tool: string, outputPath: string, cwd: string): Verdict {
-	const run = spawnSync(process.execPath, [tool, "--stage", "code-generation", "--output-path", outputPath], {
+function fire<T = Verdict>(tool: string, outputPath: string, cwd: string, stage = "code-generation", ...flags: string[]): T {
+	const run = spawnSync(process.execPath, [tool, "--stage", stage, "--output-path", outputPath, ...flags], {
 		cwd,
 		encoding: "utf-8",
 	});
 	if (run.status !== 0) throw new Error(`${tool} exited ${run.status}: ${run.stderr}`);
-	return JSON.parse(run.stdout) as Verdict;
+	return JSON.parse(run.stdout) as T;
 }
 
 const blockedBy = (findings: string[]) =>
@@ -169,6 +181,28 @@ function fireCoverage(spec: Case, record: ContinuumRecord): Verdict | null {
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
+}
+
+// The flags the dispatcher gives required-sections at the threat model's gate,
+// minus --templates-dir. A case has no space memory, so only the plugin's
+// template can apply.
+function fireSections(spec: Case): SectionsVerdict | null {
+	const dir = join(CASES, spec.id);
+	if (!existsSync(join(dir, THREAT_MODEL))) return null;
+	const verdict = fire<SectionsVerdict>(
+		SECTIONS,
+		join(dir, THREAT_MODEL),
+		dir,
+		"security-threat-model",
+		"--framework-templates-dir",
+		TEMPLATES,
+		"--template-eligible",
+		"security-threat-model",
+	);
+	if (verdict.template !== "applied") {
+		throw new Error(`${spec.id}: required-sections found no ${THREAT_MODEL} template in ${TEMPLATES}, so it checked nothing`);
+	}
+	return verdict;
 }
 
 function measure(spec: Case, sensors: Sensor[]): Outcome {
@@ -205,13 +239,18 @@ function measure(spec: Case, sensors: Sensor[]): Outcome {
 			`威胁覆盖检查（coverage_mode ${coverage.coverage_mode}）${coverage.pass ? "放行" : `拦下：${blockedBy(coverage.findings)}`}`,
 		);
 	}
-	const result: Result = detected
-		? "local"
-		: !verdict.pass
-			? "continuum"
-			: coverage?.pass === false
-				? "coverage"
-				: "not-detected";
+	const sections = fireSections(spec);
+	if (sections !== null) {
+		const missing = sections.template_missing.map((heading) => `\`${heading}\``).join("、");
+		evidence.push(`必备章节检查（模板 ${sections.template_expected.length} 节）${sections.pass ? "放行" : `拦下：缺 ${missing}`}`);
+	}
+	const byPriority: [Result, boolean][] = [
+		["local", detected],
+		["continuum", !verdict.pass],
+		["coverage", coverage?.pass === false],
+		["sections", sections?.pass === false],
+	];
+	const result = byPriority.find(([, blocked]) => blocked)?.[0] ?? "not-detected";
 	return { result, evidence };
 }
 
