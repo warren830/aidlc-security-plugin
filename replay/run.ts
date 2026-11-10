@@ -1,16 +1,19 @@
 // Runs every case in replay/cases/ against the detection this repository ships
-// today, and writes replay/REPORT.md. Two probes, both offline:
+// today, and writes replay/REPORT.md. Three probes, all offline:
 //   - every security-category sensor, core's or the plugin's, whose `matches`
 //     covers one of the case's files, fired on that file;
 //   - the security-findings-gate worker on the case's security-scan-result.md,
-//     the real AWS Continuum output that replay/continuum.ts recorded.
+//     the real AWS Continuum output that replay/continuum.ts recorded;
+//   - for a case with threat-coverage.json, the same worker on that record
+//     with the coverage merged in, beside the case's threat model.
 // A case's measured result must equal the `expected` its expected.md declares,
 // so a gap cannot be hidden by editing the report, and closing one fails the
 // run until expected.md says so.
 // Usage: bun replay/run.ts [--check]. --check also fails when REPORT.md is stale.
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
 import { CONTINUUM_RECORD } from "./continuum.ts";
 
@@ -18,9 +21,16 @@ const REPLAY = join(REPO_ROOT, "replay");
 const CASES = join(REPLAY, "cases");
 const REPORT = join(REPLAY, "REPORT.md");
 const GATE = join(PLUGIN_ROOT, "tools", "aidlc-sensor-security-findings-gate.ts");
+const THREAT_MODEL = "security-threat-model.md";
+const COVERAGE = "threat-coverage.json";
 
 const STAGES = { "threat-model": "威胁建模", "code-generation-gate": "代码生成门禁", ci: "CI" } as const;
-const RESULTS = { local: "本地检测到", continuum: "Continuum 检测到", "not-detected": "未检测到" } as const;
+const RESULTS = {
+	local: "本地检测到",
+	continuum: "Continuum 检测到",
+	coverage: "威胁覆盖检查拦下",
+	"not-detected": "未检测到",
+} as const;
 const GAP_OWNERS = { plugin: "插件", action: "AWS-9 Action" } as const;
 type Stage = keyof typeof STAGES;
 type Result = keyof typeof RESULTS;
@@ -54,6 +64,7 @@ interface Outcome {
 interface Verdict {
 	pass: boolean;
 	findings: string[];
+	coverage_mode?: string | null;
 }
 
 interface ContinuumRecord {
@@ -108,6 +119,9 @@ function readCase(id: string): Case {
 	if (!existsSync(join(CASES, id, CONTINUUM_RECORD))) {
 		problems.push(`${CONTINUUM_RECORD} is missing. Run \`bun replay/continuum.ts --case ${id}\` (see replay/README.md)`);
 	}
+	if (existsSync(join(CASES, id, COVERAGE)) !== existsSync(join(CASES, id, THREAT_MODEL))) {
+		problems.push(`${COVERAGE} and ${THREAT_MODEL} come together: the coverage names the threat model's threats`);
+	}
 	if (spec.pair !== undefined && spec.pair !== (id.endsWith("-fixed") ? id.slice(0, -"-fixed".length) : `${id}-fixed`)) {
 		problems.push(`pair "${spec.pair}" must name ${id.endsWith("-fixed") ? "the case without -fixed" : `${id}-fixed`}`);
 	}
@@ -128,6 +142,33 @@ function fire(tool: string, outputPath: string, cwd: string): Verdict {
 	});
 	if (run.status !== 0) throw new Error(`${tool} exited ${run.status}: ${run.stderr}`);
 	return JSON.parse(run.stdout) as Verdict;
+}
+
+const blockedBy = (findings: string[]) =>
+	findings.map((finding) => /^\S+ \([A-Z]+\)/.exec(finding)?.[0] ?? finding.split(". ")[0]).join("、");
+
+// The gate finds the threat model from the record's place in the record tree,
+// so the case becomes one unit of a scratch record: the threat model under
+// inception/, and the Continuum record, at schema_version 2 with the coverage
+// merged in, under construction/<id>/code-generation/. The case's own record
+// stays the service's output.
+function fireCoverage(spec: Case, record: ContinuumRecord): Verdict | null {
+	const dir = join(CASES, spec.id);
+	if (!existsSync(join(dir, COVERAGE))) return null;
+	const scratch = mkdtempSync(join(tmpdir(), "aidlc-replay-coverage-"));
+	try {
+		const model = join(scratch, "aidlc-docs", "inception", "security-threat-model", THREAT_MODEL);
+		const unit = join(scratch, "aidlc-docs", "construction", spec.id, "code-generation", CONTINUUM_RECORD);
+		mkdirSync(dirname(model), { recursive: true });
+		mkdirSync(dirname(unit), { recursive: true });
+		copyFileSync(join(dir, THREAT_MODEL), model);
+		const threat_coverage: unknown = JSON.parse(readFileSync(join(dir, COVERAGE), "utf-8"));
+		const json = JSON.stringify({ ...record, schema_version: 2, threat_coverage }, null, 2);
+		writeFileSync(unit, `# Security scan\n\n\`\`\`json\n${json}\n\`\`\`\n`);
+		return fire(GATE, unit, dir);
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
+	}
 }
 
 function measure(spec: Case, sensors: Sensor[]): Outcome {
@@ -156,9 +197,21 @@ function measure(spec: Case, sensors: Sensor[]): Outcome {
 	evidence.push(
 		`Continuum \`${record.scan.scan_id}\`（${record.scan.region}，${record.scan.completed_at.slice(0, 10)}）报了 ${reported.length} 条${
 			reported.length > 0 ? `：${reported.join("、")}` : ""
-		}；门禁${verdict.pass ? "放行" : `拦下：${verdict.findings.map((finding) => /^\S+ \([A-Z]+\)/.exec(finding)?.[0] ?? finding.split(". ")[0]).join("、")}`}`,
+		}；门禁${verdict.pass ? "放行" : `拦下：${blockedBy(verdict.findings)}`}`,
 	);
-	const result: Result = detected ? "local" : verdict.pass ? "not-detected" : "continuum";
+	const coverage = fireCoverage(spec, record);
+	if (coverage !== null) {
+		evidence.push(
+			`威胁覆盖检查（coverage_mode ${coverage.coverage_mode}）${coverage.pass ? "放行" : `拦下：${blockedBy(coverage.findings)}`}`,
+		);
+	}
+	const result: Result = detected
+		? "local"
+		: !verdict.pass
+			? "continuum"
+			: coverage?.pass === false
+				? "coverage"
+				: "not-detected";
 	return { result, evidence };
 }
 

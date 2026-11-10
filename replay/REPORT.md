@@ -4,14 +4,14 @@
 Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑的差分 code review，记录在各用例的
 `security-scan-result.md`。CI 不调用 AWS，只用插件门禁重新判一遍这些真实记录。
 
-共 28 个用例：18 个有问题的版本，10 个修好的版本。
+共 30 个用例：19 个有问题的版本，11 个修好的版本。
 
 ## 拦截率和误报率
 
 | 指标 | 结果 |
 | --- | --- |
-| 拦截率：有问题的版本被拦下 | 17 / 18 |
-| 误报率：修好的版本被误拦 | 0 / 10 |
+| 拦截率：有问题的版本被拦下 | 18 / 19 |
+| 误报率：修好的版本被误拦 | 0 / 11 |
 
 | 成对场景 | 有问题版 | 修好版 |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑�
 | 路径穿越（fs.readFile + path.join） | Continuum 检测到 | 放行（修好版） |
 | 凭证写进日志 | Continuum 检测到 | 放行（修好版） |
 | 服务端请求伪造（SSRF） | Continuum 检测到 | 放行（修好版） |
+| HIGH 威胁没有缓解证据 | 威胁覆盖检查拦下 | 放行（修好版） |
 | 弱口令哈希（MD5） | Continuum 检测到 | 放行（修好版） |
 | 反射型 XSS（模板字符串拼接） | Continuum 检测到 | 放行（修好版） |
 
@@ -53,6 +54,8 @@ Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑�
 | [SQL 注入](cases/sql-injection/expected.md) | 代码生成门禁 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/users.ts`；Continuum `cj-a92c256f-4a89-41de-957e-0228dac69d6d`（ap-southeast-1，2026-11-09）报了 1 条：HIGH SQL_INJECTION @ src/users.ts:5；门禁拦下：f-dc04b1d9-e96a-4421-8edd-9659d380f7dc (HIGH) |
 | [服务端请求伪造（SSRF）](cases/ssrf-fetch/expected.md) | 代码生成门禁 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/preview.ts`；Continuum `cj-4be8bd14-e60e-4448-a6b1-2094d21d4eb5`（ap-southeast-1，2026-11-09）报了 3 条：HIGH SERVER_SIDE_REQUEST_FORGERY @ src/preview.ts:12、MEDIUM CROSS_SITE_SCRIPTING @ src/preview.ts:15、HIGH SERVER_SIDE_REQUEST_FORGERY @ src/preview.ts:12；门禁拦下：f-3222cd16-2c77-4fdf-8cec-0f4ebb8bf924 (HIGH)、f-e7fa4a06-6983-406d-8c26-fe25ebdb86e4 (HIGH) |
 | [服务端请求伪造 — 修好版](cases/ssrf-fetch-fixed/expected.md) | 代码生成门禁 | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/preview.ts`；Continuum `cj-8d97f232-045e-47af-adb5-8fa14598f4b7`（ap-southeast-1，2026-11-09）报了 0 条；门禁放行 |
+| [HIGH 威胁没有缓解证据](cases/uncovered-threat/expected.md) | 代码生成门禁 | 威胁覆盖检查拦下 | 没有 security 类 sensor 覆盖 `src/jwt.ts`；Continuum `cj-c6893a77-05b4-4014-8a90-4b5a657c02e3`（ap-southeast-1，2026-11-09）报了 1 条：LOW JSON_WEB_TOKEN_VULNERABILITIES @ src/jwt.ts:25；门禁放行；威胁覆盖检查（coverage_mode block）拦下：T-002 (HIGH) |
+| [HIGH 威胁没有缓解证据 — 修好版](cases/uncovered-threat-fixed/expected.md) | 代码生成门禁 | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/jwt.ts`；Continuum `cj-c6893a77-05b4-4014-8a90-4b5a657c02e3`（ap-southeast-1，2026-11-09）报了 1 条：LOW JSON_WEB_TOKEN_VULNERABILITIES @ src/jwt.ts:25；门禁放行；威胁覆盖检查（coverage_mode block）放行 |
 | [引用未固定 SHA 的 Action](cases/unpinned-action/expected.md) | CI | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.github/workflows/build.yml`；Continuum `cj-25a2a2cb-cebe-419c-b04a-4bb04880409c`（ap-southeast-1，2026-11-09）报了 1 条：HIGH OTHER @ .github/workflows/build.yml:14；门禁拦下：f-d9545f10-915d-45fa-b760-96831d979447 (HIGH) |
 | [弱口令哈希（MD5）](cases/weak-crypto-md5/expected.md) | 代码生成门禁 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/passwords.ts`；Continuum `cj-b491b3bc-e771-488a-89d1-5023555b4ec8`（ap-southeast-1，2026-11-09）报了 1 条：HIGH CRYPTOGRAPHIC_VULNERABILITIES @ src/passwords.ts:4；门禁拦下：f-64515405-6b25-483b-8101-182ad8499844 (HIGH) |
 | [弱口令哈希 — 修好版](cases/weak-crypto-md5-fixed/expected.md) | 代码生成门禁 | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/passwords.ts`；Continuum `cj-9c6c3079-858d-4835-9be3-252ee73ee717`（ap-southeast-1，2026-11-09）报了 0 条；门禁放行 |

@@ -17,22 +17,36 @@
 | --- | --- |
 | `vector` | 报告里的测试向量名 |
 | `stage` | `threat-model`、`code-generation-gate` 或 `ci` |
-| `expected` | `local`、`continuum` 或 `not-detected` |
+| `expected` | `local`、`continuum`、`coverage` 或 `not-detected` |
 | `sources` | 场景的公开出处 URL |
 | `files` | `repo/` 下承载场景的文件，相对 `repo/` |
 | `gap_owner` | `expected` 是 `not-detected` 时必填（修好版不用填）：`plugin` 或 `action`（AWS-9） |
 | `pair` | 可选。成对用例的另一半：`<id>` 是有问题版，`<id>-fixed` 是只修掉问题点的修好版，两边互相指向 |
 
+威胁覆盖用例另有三个文件：
+
+- `security-threat-model.md`：Inception 的威胁模型，格式见 Security Threat Model 的 Step 6。手写的要在
+  `expected.md` 里写明。
+- `threat-coverage.json`：agent 在 Code Generation Step 4c 写进扫描记录的 `threat_coverage`。
+- `.aidlc-security.json`：门禁读的配置，比如 `{ "coverage_mode": "block" }`。
+
+威胁覆盖用例可以原样复制另一个用例的 `repo/` 和 `security-scan-result.md`，在 `expected.md` 里写明出处。
+
 ## 结果怎么算
 
-runner 对每个用例做两件事：
+runner 对每个用例做两件事，威胁覆盖用例再多做一件：
 
 1. 对 `files` 里的每个文件，找出 core 和插件里 `category: security`、`matches` 覆盖它的
    sensor，逐个运行。有一个不通过，结果就是 `local`（本地检测到）。
 2. 对 `security-scan-result.md` 运行插件的 `security-findings-gate`。门禁拦下，结果就是 `continuum`：
    Continuum 报出了 HIGH 及以上的 finding，插件门禁据此拦下。
+3. 威胁覆盖用例：在临时目录里搭一个记录目录，`security-threat-model.md` 放在
+   `<record>/inception/security-threat-model/`，`security-scan-result.md` 合进 `threat-coverage.json`、
+   `schema_version` 改成 2 以后放在 `<record>/construction/<id>/code-generation/`，再在用例目录下运行门禁。
+   前两步都没拦下、这一步拦下，结果就是 `coverage`（威胁覆盖检查拦下）。用例目录里的
+   `security-scan-result.md` 不改。
 
-两步都没拦下，结果就是 `not-detected`。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
+都没拦下，结果就是 `not-detected`。Continuum 报了、但等级低于门禁阈值的，也算 `not-detected`，
 证据里会列出它报的等级。
 
 修好版（带 `pair`、名字以 `-fixed` 结尾）被拦下算误拦。报告开头给出拦截率（有问题的版本被拦下几个）
