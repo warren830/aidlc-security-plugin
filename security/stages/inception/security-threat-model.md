@@ -132,26 +132,33 @@ comes back. Each threat has `threatId`, `statement`, `severity`, `status`,
 
 ### Step 6: Write the threat model
 
+Give each threat its own ID, `T-` and three digits, in the order `## Threats`
+lists them: `T-001` for the first, `T-002` for the next. Number the
+mitigations across the file the same way, `M-001` onwards. Code Generation
+cites these IDs, which a person can read, in place of the service's
+`threatId`, which belongs to this one review.
+
 Write `security-threat-model.md` in this stage's record folder with these
 sections:
 
 - `## Scope`: the specs the review read, by their record paths
   (`inception/requirements-analysis/requirements.md` and so on), and the
   review's `scan_id`.
-- `## Threats`: one entry per threat, highest severity first. Give its
-  statement, severity, STRIDE categories, the components from `components.md`
-  or the contracts from `contract-summary.md` it affects, and the service's
-  recommendation. Name the component a threat touches by its name in
-  `components.md`. When it touches none, say so.
-- `## Mitigations for Construction`: for each CRITICAL or HIGH threat, the
-  control the code must have, in one line each. Code Generation reads this
-  section for every unit.
+- `## Threats`: one entry per threat, highest severity first, each led by its
+  ID. Give its statement, severity, STRIDE categories, the components from
+  `components.md` or the contracts from `contract-summary.md` it affects, and
+  the service's recommendation. Name the component a threat touches by its
+  name in `components.md`. When it touches none, say so.
+- `## Mitigations for Construction`: for each CRITICAL or HIGH threat, one or
+  more controls the code must have, one line each. Lead each line with its
+  mitigation ID and the threat's ID, such as `M-001 (T-001)`. Code Generation
+  reads this section for every unit.
 - `## Record`: exactly one fenced `json` block, the machine-readable record
   below. Keep it the only `json` block in the file.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "scan": {
     "scan_id": "scan-1a2b3c4d",
     "threat_model_id": "<threat_model_id from start_threat_model_review>",
@@ -164,7 +171,8 @@ sections:
   },
   "threats": [
     {
-      "threat_id": "<threatId>",
+      "threat_id": "T-001",
+      "service_threat_id": "<threatId>",
       "statement": "<statement>",
       "severity": "HIGH",
       "status": "OPEN",
@@ -172,16 +180,24 @@ sections:
       "impact": "<threatImpact>",
       "impacted_assets": ["<impactedAssets>"],
       "recommendation": "<recommendation>",
-      "components": ["<component name from components.md>"]
+      "components": ["<component name from components.md>"],
+      "mitigations": [{ "mitigation_id": "M-001", "control": "<the control, in one line>" }]
     }
   ]
 }
 ```
 
+`threat_id` is the stage's ID and `service_threat_id` the service's
+`threatId`. Every CRITICAL or HIGH threat has one or more `mitigations`, the
+lines of `## Mitigations for Construction`. A lower threat can have none.
 `region` is the `AWS_REGION` the server runs with, `mcp_server` is the package
 the server was started from, and `completed_at` is the UTC time you saw
 `COMPLETED`. `severity` and `status` keep the service's values. Copy no
 account ID, bucket name or role ARN into the file.
+
+Code Generation records its evidence for each threat against this file's
+`scan.scan_id`. A new review has a new `scan_id`, and this stage numbers its
+threats again, so the gate then asks each unit for its evidence again.
 
 ### Step 7: Completion handoff
 
@@ -194,7 +210,8 @@ perform one in prose, and never narrate this bookkeeping to the person.
 
 Use the stage-protocol.md completion template:
 
-- The number of threats by severity, and the CRITICAL and HIGH ones by name.
+- The number of threats by severity, and the CRITICAL and HIGH ones by ID and
+  statement.
 - The review path: `<record>/inception/security-threat-model/`.
 - A structured approval question: Approve (continue to the next stage), or
   Request Changes (say what to change).

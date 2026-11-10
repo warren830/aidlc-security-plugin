@@ -55,3 +55,9 @@ their harness.
   person's answer is recorded with `engine log decision` and
   `engine log answer`. Never write one on your own, and never change
   `.aidlc-security.json` unless the person asks.
+- **Threat coverage.** The same check reads the record's `threat_coverage`.
+  Each threat at or above HIGH in the threat model needs evidence in the
+  unit's code, the person's acceptance, or the reason it does not apply. It
+  lists each gap in `coverage_gaps`, and holds the gate on them only when
+  `.aidlc-security.json` sets `coverage_mode` to `block`. An `ACCEPTED` threat
+  carries an `override`, under the same rule as a finding's.

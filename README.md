@@ -48,9 +48,13 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
 - the composed install's own dispatcher fires the gate check on an accepted
   finding, and the check blocks it without `.aidlc-security.json` and passes
   it with a lenient one;
+- the same dispatcher fires the check on a unit whose threat model has a HIGH
+  threat with no evidence, and the check passes it in warn mode and blocks it
+  in block mode;
 - the gate check's verdict for every committed record in
-  `tests/fixtures/scan-records/`, through the worker as a subprocess and
-  through `main(argv)`, in the override modes that the project folders in
+  `tests/fixtures/scan-records/` and in the record trees under
+  `tests/fixtures/records/`, through the worker as a subprocess and through
+  `main(argv)`, in the override and coverage modes that the project folders in
   `tests/fixtures/projects/` set.
 
 The tests make no AWS call: the gate check reads only files, and nothing

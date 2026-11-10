@@ -7,7 +7,8 @@ This AI-DLC plugin brings AWS Security Agent into the workflow at two points:
   the threats into `security-threat-model.md`.
 - **Construction.** Code Generation gains a diff scan of each unit's changes and
   a blocking gate check, `security-findings-gate`, that holds the stage's gate
-  while a finding at or above HIGH is open.
+  while a finding at or above HIGH is open. The check also lists each threat
+  at or above HIGH in the threat model that the unit gives no evidence for.
 
 It also gives core's `aidlc-devsecops-agent` the SECURITY-01 to SECURITY-15
 baseline and a briefing on the Security Agent tools.
@@ -22,8 +23,8 @@ ap-southeast-1 Region. Your AWS account does the work, so read
 | Piece | File | What it does |
 | --- | --- | --- |
 | Stage | `stages/inception/security-threat-model.md` | Runs after Delivery Planning in the `enterprise`, `feature`, `mvp`, `classic` and `workshop` scopes, where Inception produces a design |
-| Contribution | `contributions/construction/code-generation.md` | Adds Step 1b (hand the threat model to the developer agent) and Step 4b (diff scan, record, fix or accept) to Code Generation, and the `security-scan-result` artifact |
-| Sensor | `sensors/aidlc-security-findings-gate.md`, `tools/aidlc-sensor-security-findings-gate.ts` | Blocking gate check over `security-scan-result.md` |
+| Contribution | `contributions/construction/code-generation.md` | Adds Step 1b (hand the threat model to the developer agent), Step 4b (diff scan, record, fix or accept) and Step 4c (record the evidence for each threat) to Code Generation, and the `security-scan-result` artifact |
+| Sensor | `sensors/aidlc-security-findings-gate.md`, `tools/aidlc-sensor-security-findings-gate.ts` | Blocking gate check over `security-scan-result.md` and its threat coverage |
 | Knowledge | `knowledge/aidlc-devsecops-agent/security-baseline.md` | SECURITY-01 to SECURITY-15, loaded whenever the DevSecOps agent works |
 | Persona contribution | `contributions/agents/aidlc-devsecops-agent.md` | The AWS write rule and how the tools and the gate behave |
 
@@ -189,17 +190,22 @@ penetration testing, which is billed. AWS Continuum for code vulnerabilities
    exist, `decisions.md` and `contract-summary.md` to
    `start_threat_model_review`. It polls `get_scan_status` once a minute (a
    review usually takes 5 to 30 minutes), reads `get_scan_findings`, and
-   writes `security-threat-model.md`, which maps the threats to the design,
-   lists mitigations for Construction, and holds a `json` record. You approve
-   it at the stage's gate. When there is no design, or you choose to go on without a
-   threat model, the stage is skipped and the reason is recorded.
+   writes `security-threat-model.md`, which numbers the threats (`T-001`
+   onwards), maps them to the design, lists mitigations for Construction, and
+   holds a `json` record. You approve it at the stage's gate. When there is no
+   design, or you choose to go on without a threat model, the stage is skipped
+   and the reason is recorded.
 2. **Code Generation, Step 1b.** The threats that touch a unit go to the
-   developer agent with the unit's design.
+   developer agent with the unit's design, each with its ID.
 3. **Code Generation, Step 4b.** After the code is generated, the agent runs
    `start_diff_scan` against the commit the unit started from, waits (usually
    10 to 15 minutes), and writes `security-scan-result.md`. It fixes each
    blocking finding and scans again, unless you accept the finding.
-4. **The gate.** `security-findings-gate` checks the record before the Code
+4. **Code Generation, Step 4c.** The agent adds `threat_coverage` to the
+   record. For each threat at or above HIGH it names the code and tests that
+   mitigate it, your acceptance, or why it does not apply to the unit. It runs
+   the gate check itself and tells you each gap it could not close.
+5. **The gate.** `security-findings-gate` checks the record before the Code
    Generation gate opens.
 
 ## Gate reference
@@ -207,12 +213,14 @@ penetration testing, which is billed. AWS Continuum for code vulnerabilities
 ### The record
 
 `security-scan-result.md` sits in each unit's Code Generation folder,
-`<record>/construction/<unit>/code-generation/`. It holds a findings table for
-people and exactly one fenced `json` block, which is all the gate reads:
+`<record>/construction/<unit>/code-generation/`, or
+`<record>/construction/code-generation/` when the plan has no units. It holds
+a findings table for people and exactly one fenced `json` block, which is all
+the gate reads:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "scan": {
     "scan_id": "scan-5e6f7a8b",
     "scan_type": "DIFF",
@@ -232,22 +240,40 @@ people and exactly one fenced `json` block, which is all the gate reads:
       "code_locations": [{ "file_path": "src/config.ts", "line_start": 12, "line_end": 12 }],
       "override": { "by": "Dana Lee", "reason": "A fake key in a test fixture", "at": "2026-11-02T09:55:00Z" }
     }
-  ]
+  ],
+  "threat_coverage": {
+    "threat_model_scan_id": "scan-1a2b3c4d",
+    "threats": [
+      {
+        "threat_id": "T-001",
+        "status": "MITIGATED",
+        "evidence": [
+          { "kind": "code", "file_path": "src/auth.ts", "line_start": 12, "line_end": 20 },
+          { "kind": "test", "file_path": "tests/auth.test.ts", "name": "rejects a token signed with alg none" }
+        ]
+      },
+      { "threat_id": "T-002", "status": "NOT_APPLICABLE", "reason": "This unit builds none of api-gateway." }
+    ]
+  }
 }
 ```
 
 | Field | Values |
 | --- | --- |
+| `schema_version` | `2`. The gate still reads `1`, the version without `threat_coverage`, so a record from an earlier run passes as it did. |
 | `scan.status` | `IN_PROGRESS`, `STOPPING`, `STOPPED`, `FAILED`, `COMPLETED` |
 | `findings[].risk_level` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`, `UNKNOWN` |
 | `findings[].status` | `ACTIVE`, `RESOLVED`, `ACCEPTED`, `FALSE_POSITIVE` |
 | `findings[].override` | Present only on a finding you accepted in lenient mode |
+| `threat_coverage` | Written by Step 4c when the plan has a threat model. See [Threat coverage](#threat-coverage). |
+| `threat_coverage.threats[].status` | `MITIGATED` (with `evidence`), `ACCEPTED` (with `override`), `NOT_APPLICABLE` (with `reason`) |
+| `threat_coverage.threats[].evidence[].kind` | `code` and `test` (with `file_path`), `finding` (with `finding_id`) |
 
 When you go on without a scan, the record holds `not_run` in place of `scan`
-and `findings`:
+and `findings`, and no `threat_coverage`:
 
 ```json
-{ "schema_version": 1, "not_run": { "reason": "<your words>", "at": "2026-11-02T09:45:00Z" } }
+{ "schema_version": 2, "not_run": { "reason": "<your words>", "at": "2026-11-02T09:45:00Z" } }
 ```
 
 ### When the gate holds
@@ -262,6 +288,8 @@ The check fails, and the gate stays closed, when any of these is true:
   `ACCEPTED` or `FALSE_POSITIVE` is not your decision, so those findings hold
   the gate too.
 - A finding has `risk_level` `UNKNOWN`. It holds the gate at every threshold.
+- `coverage_mode` is `block` and the record has a threat coverage gap (see
+  [Threat coverage](#threat-coverage)).
 - `.aidlc-security.json` exists but does not set a mode the check reads (see
   [Override modes](#override-modes)).
 
@@ -269,14 +297,55 @@ The check also fires on each unit's `code-generation-plan.md`, and fails there
 when no record sits beside the plan, so a unit that skipped the scan cannot
 pass the gate.
 
+### Threat coverage
+
+The diff scan finds problems in the code that changed. It does not say
+whether the unit has the controls the threat model asked for, so the check
+asks the record. Each threat at or above HIGH in
+`<record>/inception/security-threat-model/security-threat-model.md` needs one
+entry in the record's `threat_coverage`.
+
+- **`MITIGATED`** lists at least one piece of evidence: `code` or `test` with
+  a `file_path` relative to the repository root, or `finding` with the
+  `finding_id` of a finding in the same record. The check never opens the
+  files, because the unit's code can live in a Bolt worktree.
+- **`ACCEPTED`** carries your `override`, and counts only in lenient mode, as
+  for a finding.
+- **`NOT_APPLICABLE`** gives a non-empty `reason`, such as the components the
+  unit does not build.
+
+`threat_model_scan_id` must be the threat model's `scan.scan_id`. The threat
+IDs (`T-001` onwards) belong to one threat model, so after a new review the
+check counts every required threat as uncovered until the agent writes the
+coverage again. A missing `threat_coverage`, as in every version 1 record, and one
+that does not match this shape also leave every required threat uncovered.
+An entry for a threat the threat model does not list, or a second entry for
+the same threat, is a gap too. A threat with a severity the check does not
+know counts as required. Without a threat model file, the plan skipped the
+threat model and nothing needs evidence.
+
+Each gap is one sentence in the check's `coverage_gaps`. What a gap does
+depends on `coverage_mode` in `.aidlc-security.json`:
+
+| `coverage_mode` | A coverage gap |
+| --- | --- |
+| `off` | Not checked. |
+| `warn`, the default | Listed in `coverage_gaps` only. The gate passes or fails as it would without the check. |
+| `block` | Listed in `coverage_gaps` and `findings`, and holds the gate like a finding. |
+
+The dispatcher keeps the check's output only for a failed check, so in warn
+mode a gap shows only because Code Generation's Step 4c runs the check itself
+and tells you each one.
+
 ### Override modes
 
 The override mode decides whether an `override` in the record can pass a
-finding. Set it in `.aidlc-security.json` at the project root, and commit the
-file so that a change to it shows in review:
+finding or a threat. Set it in `.aidlc-security.json` at the project root,
+beside the coverage mode, and commit the file so that a change to it shows in
+review:
 
 ```json
-{ "override_mode": "lenient" }
+{ "override_mode": "lenient", "coverage_mode": "block" }
 ```
 
 | Mode | What accepts a blocking finding |
@@ -284,9 +353,11 @@ file so that a change to it shows in review:
 | `strict`, the default | Only your **Override blocking sensors** choice at the gate. The check ignores every `override` in the record. |
 | `lenient` | A valid `override` in the record, or your **Override blocking sensors** choice at the gate. |
 
-Without the file, or without `override_mode`, the mode is strict. When the
-file exists but cannot be read, is not valid JSON, holds another key, or sets
-another mode, the check fails and names the file.
+Without the file, the override mode is strict and the coverage mode is warn,
+and a file that leaves out a key keeps that key's default. When the file
+exists but cannot be read, is not valid JSON, holds a key other than
+`override_mode` and `coverage_mode`, or sets a value its key does not take,
+the check fails and names the file.
 
 The two modes trade unattended runs against proof that a person decided:
 
@@ -299,7 +370,7 @@ The two modes trade unattended runs against proof that a person decided:
   under Construction autonomy, so an autonomous run stops on any blocking
   finding until you come back.
 
-### Accepting a finding
+### Accepting a finding or a threat
 
 Only you can accept a finding. The agent asks about each blocking finding
 (**Fix it** or **Accept the risk**) and asks for your reason. It records your
@@ -324,6 +395,12 @@ alone, so the record of an accepted finding is its `override` in
 `security-scan-result.md` and your answer in the audit log. In either mode,
 **Override blocking sensors** opens the gate over every remaining finding at
 once, and the engine records that choice on the gate.
+
+You accept a threat the unit leaves open the same way. The agent asks you,
+records your answer, and writes the threat's entry as `ACCEPTED` with your
+`override`. In lenient mode the override counts. In strict mode the check
+keeps the threat in `coverage_gaps`, and under `coverage_mode` `block` you
+accept it at the gate with **Override blocking sensors**.
 
 ### Threshold
 
@@ -356,5 +433,10 @@ aidlc engine sensor fire security-findings-gate --stage code-generation \
 - `git diff` leaves out files git does not track. The agent marks the unit's
   new files with `git add --intent-to-add` before the scan, which stages no
   content.
+- The check cannot tell which threats a unit touches, because AI-DLC keeps no
+  machine-readable map from units to components. The agent marks a threat the
+  unit does not touch `NOT_APPLICABLE` with its reason, and the check confirms
+  only that each required threat has an entry that counts. It does not read
+  the cited code to see whether the control is there.
 - This repository builds and tests the Claude Code and Kiro IDE projections
   only.
