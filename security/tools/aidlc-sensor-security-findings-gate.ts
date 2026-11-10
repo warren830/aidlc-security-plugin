@@ -98,6 +98,10 @@ function isOverrideMode(value: unknown): value is OverrideMode {
 	return typeof value === "string" && (OVERRIDE_MODES as readonly string[]).includes(value);
 }
 
+function message(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 // Only a missing file or key falls back to strict. Anything else that is not
 // one of the two modes fails the gate, so a typo never decides the mode.
 function readOverrideMode(projectDir: string): ModeSetting {
@@ -108,13 +112,13 @@ function readOverrideMode(projectDir: string): ModeSetting {
 		text = readFileSync(path, "utf-8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { mode: DEFAULT_OVERRIDE_MODE };
-		return problem(`cannot be read (${error instanceof Error ? error.message : String(error)})`);
+		return problem(`cannot be read (${message(error)})`);
 	}
 	let raw: unknown;
 	try {
 		raw = JSON.parse(text);
 	} catch (error) {
-		return problem(`is not valid JSON (${error instanceof Error ? error.message : String(error)})`);
+		return problem(`is not valid JSON (${message(error)})`);
 	}
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return problem("is not a JSON object");
 	const unread = Object.keys(raw).filter((key) => key !== "override_mode");
@@ -126,7 +130,7 @@ function readOverrideMode(projectDir: string): ModeSetting {
 	return isOverrideMode(mode) ? { mode } : problem(`sets override_mode to ${JSON.stringify(mode)}`);
 }
 
-function recordJson(markdown: string): { json: string } | { problem: string } {
+function recordJson(markdown: string): { value: unknown } | { problem: string } {
 	const lines = markdown.split(/\r?\n/);
 	const blocks: string[] = [];
 	for (let open = 0; open < lines.length; open++) {
@@ -139,11 +143,14 @@ function recordJson(markdown: string): { json: string } | { problem: string } {
 	if (blocks.length !== 1) {
 		return { problem: `it holds ${blocks.length} \`\`\`json blocks, and the record is exactly one` };
 	}
-	return { json: blocks[0] };
+	try {
+		return { value: JSON.parse(blocks[0]) };
+	} catch (error) {
+		return { problem: `its json block is not valid JSON (${message(error)})` };
+	}
 }
 
-function parseRecord(value: unknown): { record: ScanRecord } | { problems: string[] } {
-	const problems: string[] = [];
+function fieldReader(problems: string[]) {
 	const object = (input: unknown, at: string): Record<string, unknown> => {
 		if (typeof input === "object" && input !== null && !Array.isArray(input)) {
 			return input as Record<string, unknown>;
@@ -177,6 +184,12 @@ function parseRecord(value: unknown): { record: ScanRecord } | { problems: strin
 		problems.push(`${at} must be a whole number`);
 		return undefined;
 	};
+	return { object, list, text, oneOf, timestamp, optionalLine };
+}
+
+function parseRecord(value: unknown): { record: ScanRecord } | { problems: string[] } {
+	const problems: string[] = [];
+	const { object, list, text, oneOf, timestamp, optionalLine } = fieldReader(problems);
 
 	const root = object(value, "the record");
 	if (root.schema_version !== 1) {
@@ -343,15 +356,7 @@ function evaluate(outputPath: string, threshold: string, setting: ModeSetting): 
 
 	const block = recordJson(markdown);
 	if ("problem" in block) return verdict([`${RECORD_FILE}: ${block.problem}.`]);
-	let raw: unknown;
-	try {
-		raw = JSON.parse(block.json);
-	} catch (error) {
-		return verdict([
-			`${RECORD_FILE}: its json block is not valid JSON (${error instanceof Error ? error.message : String(error)}).`,
-		]);
-	}
-	const parsed = parseRecord(raw);
+	const parsed = parseRecord(block.value);
 	if ("problems" in parsed) return verdict(parsed.problems.map((problem) => `${RECORD_FILE}: ${problem}.`));
 	const { blocking, overrides } = decide(parsed.record, threshold, setting.mode);
 	return verdict(blocking, overrides);
