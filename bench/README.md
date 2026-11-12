@@ -22,6 +22,14 @@ message, and the run's own label and folder. Everything else comes from
 Bedrock model and region, the driver, the timeout, the allowed and
 disallowed tools, and how the patch or app is collected.
 
+## Results
+
+The BaxBench pilot ran on 2026-11-08. It stopped before arm3 finished, when
+warren ruled out any run above $300. The
+[pilot results](results/baxbench-pilot-2026-11-08/README.md) compare the
+plugin off and on, task by task, and say what is missing and why. SusVibes
+v1.0 has not run.
+
 ## Before you start
 
 The experiment host needs:
