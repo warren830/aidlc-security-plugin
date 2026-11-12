@@ -9,19 +9,61 @@ review ran, so the IDs and the `scan_id` below come from no service.
 - `inception/domain-design/components.md`
 - Review `hand-written`
 
-## Threats
+## Assumptions
+
+- A-001 Only auth-service and the token issuer, `https://auth.example.com`,
+  hold the HS256 secret.
+- A-002 Callers reach auth-service from outside the service, so any caller
+  can send it a token that the caller made.
+
+## Trust boundaries
+
+- Caller to auth-service: the caller that presents a token on one side, and
+  auth-service on the other.
+
+## Asset flows
+
+- Token: the issuer signs it, the caller sends it with each request, and
+  auth-service verifies it. It crosses caller to auth-service.
+- HS256 secret: the issuer and auth-service each hold it, and no request
+  carries it. It crosses no trust boundary.
+- auth-service, which each threat's record names as its impacted asset: the
+  user and roles it reads from a token it accepts go to the code in the
+  service that called it. They cross no trust boundary.
+
+## Spoofing
 
 - T-001 (CRITICAL) A token whose header names alg none, or any algorithm but
   HS256, is accepted without a valid signature. STRIDE: spoofing. Component:
-  auth-service. Recommendation: pin the algorithm and verify the signature
-  before reading the claims.
+  auth-service. Trust boundary: caller to auth-service. Recommendation: pin
+  the algorithm and verify the signature before reading the claims.
 - T-002 (HIGH) A token that has expired, or that another issuer signed or
   another service was meant to receive, is still accepted. STRIDE: spoofing,
-  elevation of privilege. Component: auth-service. Recommendation: check
-  `exp`, `iss` and `aud` on every token.
+  elevation of privilege. Component: auth-service. Trust boundary: caller to
+  auth-service. Recommendation: check `exp`, `iss` and `aud` on every token.
+
+## Tampering
+
+The review found no tampering threat.
+
+## Repudiation
+
+The review found no repudiation threat.
+
+## Information disclosure
+
 - T-003 (MEDIUM) The verifier's errors say which check failed, which helps an
   attacker probe it. STRIDE: information disclosure. Component: auth-service.
-  Recommendation: return one error to the caller and log the detail.
+  Trust boundary: caller to auth-service. Recommendation: return one error to
+  the caller and log the detail.
+
+## Denial of service
+
+The review found no denial of service threat.
+
+## Elevation of privilege
+
+- T-002. Its entry is under `## Spoofing`.
 
 ## Mitigations for Construction
 

@@ -3,10 +3,12 @@
 // into a scratch install of that harness, both through aidlc-workflows'
 // plugin-kit and through the shipped aidlc-plugin-test, with no compose drops.
 // The install's own dispatcher then fires the gate check the way the gate
-// does, to prove the check reads the project's override mode on a real fire.
+// does, to prove the check reads the project's override mode on a real fire,
+// and fires core's required-sections on the threat model, to prove the
+// plugin's template lands where the dispatcher looks for it.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_ROOT, REPO_ROOT, upstreamDir } from "../scripts/upstream.ts";
@@ -44,9 +46,15 @@ interface GraphNode {
 	}[];
 }
 
+interface FireVerdict {
+	result: string;
+	detail_path: string | null;
+}
+
 const kit = (await import(join(upstreamDir(), "tests", "harness", "plugin-kit.ts"))) as PluginKit;
 
 const HARNESS_DIR: Record<Harness, string> = { claude: ".claude", "kiro-ide": ".kiro" };
+const TEMPLATE = join("tools", "data", "templates", "security-threat-model.md");
 
 function pluginTool(...args: string[]): ReturnType<typeof spawnSync> {
 	return spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "plugin-tool.ts"), ...args], {
@@ -57,6 +65,16 @@ function pluginTool(...args: string[]): ReturnType<typeof spawnSync> {
 
 test("the shipped validator accepts the authored plugin root", () => {
 	expect(kit.validatePluginContent(PLUGIN_ROOT)).toEqual([]);
+});
+
+// The agent writes the sections Step 6 lists, and required-sections checks the
+// template's, so the two lists must not drift apart.
+test("the threat model stage's Step 6 lists its template's sections, in order", () => {
+	const stage = readFileSync(join(PLUGIN_ROOT, "stages", "inception", "security-threat-model.md"), "utf-8");
+	const stepSix = /^### Step 6:[\s\S]*?(?=^### )/m.exec(stage)?.[0] ?? "";
+	const named = [...stepSix.matchAll(/`(## [^`]+)`/g)].map(([, heading]) => heading.replace(/\s+/g, " "));
+	const template = readFileSync(join(PLUGIN_ROOT, TEMPLATE), "utf-8");
+	expect([...new Set(named)]).toEqual(template.match(/^## .+$/gm) ?? []);
 });
 
 for (const harness of ["claude", "kiro-ide"] as const) {
@@ -116,26 +134,25 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 		});
 
 		const fixtures = join(REPO_ROOT, "tests", "fixtures");
+		const threatModel = join(fixtures, "records", "threat-model", "inception", "security-threat-model", "security-threat-model.md");
 		const placeRecord = (unit: string, fixture: string): string => {
 			const record = join(project, "aidlc-docs", "construction", unit, "code-generation", "security-scan-result.md");
 			mkdirSync(dirname(record), { recursive: true });
 			copyFileSync(fixture, record);
 			return record;
 		};
+		const placeModel = (content: string): string => {
+			const model = join(project, "aidlc-docs", "inception", "security-threat-model", "security-threat-model.md");
+			mkdirSync(dirname(model), { recursive: true });
+			writeFileSync(model, content);
+			return model;
+		};
 		const useConfig = (name: string) =>
 			copyFileSync(join(fixtures, "projects", name, ".aidlc-security.json"), join(project, ".aidlc-security.json"));
-		const fire = (record: string): string => {
+		const fire = (outputPath: string, sensor = "security-findings-gate", stage = "code-generation"): FireVerdict => {
 			const run = spawnSync(
 				process.execPath,
-				[
-					join(installed, "tools", "aidlc-sensor.ts"),
-					"fire",
-					"security-findings-gate",
-					"--stage",
-					"code-generation",
-					"--output-path",
-					record,
-				],
+				[join(installed, "tools", "aidlc-sensor.ts"), "fire", sensor, "--stage", stage, "--output-path", outputPath],
 				{
 					cwd: project,
 					encoding: "utf-8",
@@ -143,25 +160,40 @@ for (const harness of ["claude", "kiro-ide"] as const) {
 				},
 			);
 			expect(run.status, `${run.stdout}${run.stderr}`).toBe(0);
-			return (JSON.parse(run.stdout) as { result: string }).result;
+			return JSON.parse(run.stdout) as FireVerdict;
 		};
 
 		test("the dispatcher's fire blocks a recorded override without a config, and passes it with a lenient one", () => {
 			const record = placeRecord("unit-a", join(fixtures, "scan-records", "override-accepted", "security-scan-result.md"));
-			expect(fire(record)).toBe("failed");
+			expect(fire(record).result).toBe("failed");
 			useConfig("lenient");
-			expect(fire(record)).toBe("passed");
+			expect(fire(record).result).toBe("passed");
 		});
 
 		test("the dispatcher's fire finds the threat model, and holds the gate on a threat with no evidence only in block mode", () => {
-			const model = join(project, "aidlc-docs", "inception", "security-threat-model", "security-threat-model.md");
-			mkdirSync(dirname(model), { recursive: true });
-			copyFileSync(join(fixtures, "records", "threat-model", "inception", "security-threat-model", "security-threat-model.md"), model);
+			placeModel(readFileSync(threatModel, "utf-8"));
 			const record = placeRecord("unit-b", join(fixtures, "scan-records", "clean", "security-scan-result.md"));
 			useConfig("coverage-warn");
-			expect(fire(record)).toBe("passed");
+			expect(fire(record).result).toBe("passed");
 			useConfig("coverage-block");
-			expect(fire(record)).toBe("failed");
+			expect(fire(record).result).toBe("failed");
+		});
+
+		test("the dispatcher's required-sections fire passes a complete threat model on the install's template, and names a missing section", () => {
+			expect(readFileSync(join(installed, TEMPLATE), "utf-8")).toBe(readFileSync(join(PLUGIN_ROOT, TEMPLATE), "utf-8"));
+			const complete = readFileSync(threatModel, "utf-8");
+			const model = placeModel(complete);
+			expect(fire(model, "required-sections", "security-threat-model").result).toBe("passed");
+			placeModel(complete.replace(/^## Repudiation\n[\s\S]*?(?=^## )/m, ""));
+			const verdict = fire(model, "required-sections", "security-threat-model");
+			expect(verdict.result).toBe("failed");
+			const detail = readFileSync(join(project, verdict.detail_path ?? ""), "utf-8");
+			const findings = JSON.parse(/^```json\n([\s\S]*?)\n```$/m.exec(detail)?.[1] ?? "{}") as {
+				template_missing?: string[];
+				message?: string;
+			};
+			expect(findings.template_missing).toEqual(["## Repudiation"]);
+			expect(findings.message).toContain("`## Repudiation`");
 		});
 
 		test("gives the core DevSecOps agent the security baseline and the AWS Security Agent guidance", () => {

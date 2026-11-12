@@ -1,0 +1,15 @@
+{
+  "threat_model_scan_id": "hand-written",
+  "threats": [
+    {
+      "threat_id": "T-001",
+      "status": "MITIGATED",
+      "evidence": [{ "kind": "code", "file_path": "src/jwt.ts", "line_start": 25, "line_end": 33 }]
+    },
+    {
+      "threat_id": "T-002",
+      "status": "MITIGATED",
+      "evidence": [{ "kind": "code", "file_path": "src/jwt.ts", "line_start": 35, "line_end": 41 }]
+    }
+  ]
+}

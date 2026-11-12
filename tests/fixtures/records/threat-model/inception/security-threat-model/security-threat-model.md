@@ -6,13 +6,49 @@
 - `inception/domain-design/components.md`
 - Review `scan-tm-1a2b3c4d`
 
-## Threats
+## Assumptions
 
-- T-001 (CRITICAL) A token whose header says alg none is accepted without a signature. Component: auth-service.
-- T-002 (HIGH) An expired token, or one issued for another service, is still accepted. Component: auth-service.
-- T-003 (HIGH) Session tokens are written to the access log. Component: api-gateway.
-- T-004 (MEDIUM) Error responses name the check that failed. Component: auth-service.
-- T-005 (LOW) The login form sets no autocomplete hint. Component: web-ui.
+- A-001 Users sign in through web-ui, and each request after that carries a token that auth-service issued.
+- A-002 Only auth-service holds the key that signs tokens.
+- A-003 People outside the service team can read the access log.
+
+## Trust boundaries
+
+- Browser to api-gateway: the user's browser, which runs web-ui, on one side, and api-gateway on the other.
+- api-gateway to the access log: api-gateway on one side, and the log store that people outside the service team read on the other.
+
+## Asset flows
+
+- Session token: auth-service issues it, web-ui sends it with each request, and api-gateway passes it to auth-service to verify. It crosses browser to api-gateway.
+- Signing key: auth-service holds it, and it never leaves auth-service. It crosses no trust boundary.
+- Access log lines: api-gateway writes one for each request. They cross api-gateway to the access log.
+
+## Spoofing
+
+- T-001 (CRITICAL) A token whose header says alg none is accepted without a signature. STRIDE: spoofing. Component: auth-service. Trust boundary: browser to api-gateway.
+- T-002 (HIGH) An expired token, or one issued for another service, is still accepted. STRIDE: spoofing, elevation of privilege. Component: auth-service. Trust boundary: browser to api-gateway.
+
+## Tampering
+
+The review found no tampering threat.
+
+## Repudiation
+
+The review found no repudiation threat.
+
+## Information disclosure
+
+- T-003 (HIGH) Session tokens are written to the access log. STRIDE: information disclosure. Component: api-gateway. Trust boundary: api-gateway to the access log.
+- T-004 (MEDIUM) Error responses name the check that failed. STRIDE: information disclosure. Component: auth-service. Trust boundary: browser to api-gateway.
+- T-005 (LOW) The login form sets no autocomplete hint. STRIDE: information disclosure. Component: web-ui. Trust boundary: none.
+
+## Denial of service
+
+The review found no denial of service threat.
+
+## Elevation of privilege
+
+- T-002. Its entry is under `## Spoofing`.
 
 ## Mitigations for Construction
 

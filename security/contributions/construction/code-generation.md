@@ -25,7 +25,8 @@ fragments:
 ### Step 1b (security): Read the threat model
 
 When `<record>/inception/security-threat-model/security-threat-model.md`
-exists, read its `## Threats` and `## Mitigations for Construction` sections.
+exists, read the threats in its six STRIDE sections and its
+`## Mitigations for Construction` section.
 List the threats that touch the components this unit builds, each with its ID
 (`T-001`), its recommendation and its mitigations, and put that list in the
 Step 4 delegation prompt beside the unit's design artifacts. Ask the developer
@@ -160,8 +161,8 @@ the gate until it shows a completed scan with no open finding at or above HIGH.
 
 Skip this step when `security-threat-model.md` does not exist, when the record
 holds `not_run`, or when `.aidlc-security.json` sets `coverage_mode` to `off`.
-Otherwise record how this unit answers each threat at or above HIGH in
-`## Threats`, after Step 4b's last scan and each time you write the record
+Otherwise record how this unit answers each threat at or above HIGH in the
+threat model, after Step 4b's last scan and each time you write the record
 again. Add `threat_coverage` beside `scan` in the record's `json` block, with
 one entry per threat:
 

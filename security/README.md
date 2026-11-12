@@ -25,6 +25,7 @@ ap-southeast-1 Region. Your AWS account does the work, so read
 | Stage | `stages/inception/security-threat-model.md` | Runs after Delivery Planning in the `enterprise`, `feature`, `mvp`, `classic` and `workshop` scopes, where Inception produces a design |
 | Contribution | `contributions/construction/code-generation.md` | Adds Step 1b (hand the threat model to the developer agent), Step 4b (diff scan, record, fix or accept) and Step 4c (record the evidence for each threat) to Code Generation, and the `security-scan-result` artifact |
 | Sensor | `sensors/aidlc-security-findings-gate.md`, `tools/aidlc-sensor-security-findings-gate.ts` | Blocking gate check over `security-scan-result.md` and its threat coverage |
+| Template | `tools/data/templates/security-threat-model.md` | The sections of `security-threat-model.md`, which core's `required-sections` check requires (see [The threat model's sections](#the-threat-models-sections)) |
 | Knowledge | `knowledge/aidlc-devsecops-agent/security-baseline.md` | SECURITY-01 to SECURITY-15, loaded whenever the DevSecOps agent works |
 | Persona contribution | `contributions/agents/aidlc-devsecops-agent.md` | The AWS write rule and how the tools and the gate behave |
 
@@ -190,11 +191,13 @@ penetration testing, which is billed. AWS Continuum for code vulnerabilities
    exist, `decisions.md` and `contract-summary.md` to
    `start_threat_model_review`. It polls `get_scan_status` once a minute (a
    review usually takes 5 to 30 minutes), reads `get_scan_findings`, and
-   writes `security-threat-model.md`, which numbers the threats (`T-001`
-   onwards), maps them to the design, lists mitigations for Construction, and
-   holds a `json` record. You approve it at the stage's gate. When there is no
-   design, or you choose to go on without a threat model, the stage is skipped
-   and the reason is recorded.
+   writes `security-threat-model.md`. The file lists the assumptions the
+   threats depend on, the trust boundaries, and the path each asset takes. It
+   puts each threat (`T-001` onwards) under its STRIDE category, maps it to
+   the design, lists mitigations for Construction, and holds a `json` record.
+   You confirm the assumptions and approve the file at the stage's gate. When
+   there is no design, or you choose to go on without a threat model, the
+   stage is skipped and the reason is recorded.
 2. **Code Generation, Step 1b.** The threats that touch a unit go to the
    developer agent with the unit's design, each with its ID.
 3. **Code Generation, Step 4b.** After the code is generated, the agent runs
@@ -207,6 +210,31 @@ penetration testing, which is billed. AWS Continuum for code vulnerabilities
    the gate check itself and tells you each gap it could not close.
 5. **The gate.** `security-findings-gate` checks the record before the Code
    Generation gate opens.
+
+### The threat model's sections
+
+`security-threat-model.md` has 12 `##` sections, in this order: `## Scope`,
+`## Assumptions`, `## Trust boundaries`, `## Asset flows`, one section for
+each STRIDE category (`## Spoofing`, `## Tampering`, `## Repudiation`,
+`## Information disclosure`, `## Denial of service` and
+`## Elevation of privilege`), `## Mitigations for Construction` and
+`## Record`. Each threat has one entry, under the first of its STRIDE
+categories. A category with no threat says so in one line. You confirm the
+assumptions (`A-001` onwards) when you approve the threat model.
+
+The plugin ships these headings as the template
+`tools/data/templates/security-threat-model.md`, and compose copies it to
+`.claude/tools/data/templates/` (`.kiro/tools/data/templates/` on Kiro).
+Core's `required-sections` check, which the stage imports, names each heading
+of the template that the file lacks. The check is advisory. When it names a
+missing section, the agent adds the section before the gate opens. At the
+gate you see each section that is still missing, and you decide.
+
+To use other sections, put your own `security-threat-model.md` in
+`aidlc/spaces/<space>/memory/templates/`. It replaces the plugin's template
+whole, for the check and for the sections the agent writes.
+`security-findings-gate` reads only the `json` record, so the sections do not
+change what it decides.
 
 ## Gate reference
 

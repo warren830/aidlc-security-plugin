@@ -41,6 +41,8 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
 `bun run test` checks, for the Claude Code and Kiro IDE projections:
 
 - the shipped validator accepts the plugin;
+- the threat model stage's Step 6 lists the sections of the plugin's
+  threat model template, in the same order;
 - each projection composes into a scratch install with no drops, with the
   threat model stage in Inception, the gate check on Code Generation, and the
   baseline and persona fragments on the DevSecOps agent;
@@ -51,6 +53,10 @@ accept, so move the pin in `.github/workflows/ci.yml` and here together.
 - the same dispatcher fires the check on a unit whose threat model has a HIGH
   threat with no evidence, and the check passes it in warn mode and blocks it
   in block mode;
+- the same dispatcher fires core's `required-sections` on the threat model,
+  against the template that compose put in the install: a complete threat
+  model passes, and one without `## Repudiation` fails, and the detail file
+  names that section;
 - the gate check's verdict for every committed record in
   `tests/fixtures/scan-records/` and in the record trees under
   `tests/fixtures/records/`, through the worker as a subprocess and through
