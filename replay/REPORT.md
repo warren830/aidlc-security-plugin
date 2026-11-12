@@ -8,10 +8,14 @@ Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑�
 
 ## 拦截率和误报率
 
-| 指标 | 结果 |
-| --- | --- |
-| 拦截率：有问题的版本被拦下 | 19 / 20 |
-| 误报率：修好的版本被误拦 | 0 / 11 |
+插件开是这个仓库的完整流程，插件关是只有 AI-DLC core 的情况，两列来自同一次运行，定义见"插件开和关"。
+
+| 指标 | 插件关 | 插件开 |
+| --- | --- | --- |
+| 拦截率：有问题的版本被拦下 | 0 / 20 | 19 / 20 |
+| 误报率：修好的版本被误拦 | 0 / 11 | 0 / 11 |
+
+插件开时每对场景两边的结果：
 
 | 成对场景 | 有问题版 | 修好版 |
 | --- | --- | --- |
@@ -27,7 +31,49 @@ Continuum 的结果来自 `bun replay/continuum.ts` 对真实 AWS Continuum 跑�
 | 弱口令哈希（MD5） | Continuum 检测到 | 放行（修好版） |
 | 反射型 XSS（模板字符串拼接） | Continuum 检测到 | 放行（修好版） |
 
+## 插件开和关
+
+插件关：只运行 AI-DLC core 自己的检查。对用例文件运行 core 的 `category: security` sensor（core 有 0 个），
+对威胁模型运行 core 的 `required-sections`，但不给插件的模板。不运行插件的门禁，也不做威胁覆盖检查，
+所以 Continuum 的记录只在插件开时参与判定。插件开：再加上插件的 sensor、门禁、威胁覆盖检查和插件的模板，结果见"全部用例"。
+
+| 测试向量 | 插件关 | 插件开 | 插件关时的证据 |
+| --- | --- | --- | --- |
+| 打开仓库就执行的 agent 配置 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.claude/settings.json`；没有 security 类 sensor 覆盖 `.mcp.json`；没有 security 类 sensor 覆盖 `.vscode/tasks.json` |
+| 命令注入（child_process.exec 拼接） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/git.ts` |
+| 命令注入 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/git.ts` |
+| CORS 通配符 + 允许凭证 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/cors.ts` |
+| CORS 通配符 + 允许凭证 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/cors.ts` |
+| Dockerfile：漂移的 latest 标签 + root 运行 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `Dockerfile` |
+| Dockerfile：漂移的 latest 标签 + root 运行 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `Dockerfile` |
+| 不安全的随机数（Math.random 生成 token） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/tokens.ts` |
+| 不安全的随机数 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/tokens.ts` |
+| JWT 算法混淆（接受 alg: none） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/jwt.ts` |
+| JWT 算法混淆 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/jwt.ts` |
+| lockfile 里的被劫持版本和陌生依赖 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `package-lock.json`；没有 security 类 sensor 覆盖 `package.json` |
+| MCP 配置文件里的凭证 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.mcp.json` |
+| 路径穿越（fs.readFile + path.join） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/reports.ts` |
+| 路径穿越 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/reports.ts` |
+| 依赖的 postinstall 脚本 | 未检测到 | 未检测到 | 没有 security 类 sensor 覆盖 `package.json`；没有 security 类 sensor 覆盖 `vendor/example-helper/package.json`；没有 security 类 sensor 覆盖 `vendor/example-helper/postinstall.js` |
+| pull_request_target 和 issue 标题注入 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.github/workflows/triage.yml` |
+| 规则文件里的隐形 Unicode 指令 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.cursor/rules/style.mdc`；没有 security 类 sensor 覆盖 `.kiro/steering/style.md` |
+| 凭证写进日志 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/handler.ts` |
+| 凭证写进日志 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/handler.ts` |
+| SQL 注入 | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/users.ts` |
+| 服务端请求伪造（SSRF） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/preview.ts` |
+| 服务端请求伪造 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/preview.ts` |
+| 威胁模型漏了 STRIDE 章节 | 未检测到 | 必备章节检查拦下 | 没有 security 类 sensor 覆盖 `src/jwt.ts`；必备章节检查（没有模板）放行 |
+| HIGH 威胁没有缓解证据 | 未检测到 | 威胁覆盖检查拦下 | 没有 security 类 sensor 覆盖 `src/jwt.ts`；必备章节检查（没有模板）放行 |
+| HIGH 威胁没有缓解证据 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/jwt.ts`；必备章节检查（没有模板）放行 |
+| 引用未固定 SHA 的 Action | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `.github/workflows/build.yml` |
+| 弱口令哈希（MD5） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/passwords.ts` |
+| 弱口令哈希 — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/passwords.ts` |
+| 反射型 XSS（模板字符串拼接） | 未检测到 | Continuum 检测到 | 没有 security 类 sensor 覆盖 `src/greeting.ts` |
+| 反射型 XSS — 修好版 | 放行（修好版） | 放行（修好版） | 没有 security 类 sensor 覆盖 `src/greeting.ts` |
+
 ## 全部用例
+
+插件开时的结果。
 
 | 测试向量 | 检测环节 | 当前结果 | 证据 |
 | --- | --- | --- | --- |
