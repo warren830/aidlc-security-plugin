@@ -9,9 +9,16 @@ AWS Security Agent for [AI-DLC](https://github.com/awslabs/aidlc-workflows).
 - [`replay/`](replay/README.md) is a validation suite: minimal scenarios, where
   each should be detected, and what the current implementation detects.
   `bun run replay` writes its [`REPORT.md`](replay/REPORT.md), and CI runs
-  `bun run replay:check`.
-- A GitHub Action will also live in this repository. It is separate work and
-  is not here yet.
+  `bun run replay:check`. The report scores each case twice, with the plugin
+  on and with AI-DLC core alone, which is the plugin off.
+- [`bench/`](bench/README.md) runs Claude Code alone, with AI-DLC, and with
+  AI-DLC and this plugin, on BaxBench and SusVibes. The
+  [BaxBench pilot results](bench/results/baxbench-pilot-2026-11-08/README.md)
+  compare the plugin off and on, task by task.
+- [`aidlc-security-action`](https://github.com/warren830/aidlc-security-action)
+  is the GitHub Action, in its own repository. It runs this plugin's
+  `security-findings-gate` worker, pinned to a plugin commit, on the same
+  `security-scan-result.md`, so CI and the local gate reach the same verdict.
 
 ## Development
 

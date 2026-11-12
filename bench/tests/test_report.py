@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
+import bench
 import report
+
+PILOT = Path(report.__file__).resolve().parent / "results" / "baxbench-pilot-2026-11-08"
 
 
 def put(path: Path, data: object) -> None:
@@ -114,3 +118,59 @@ def test_each_arm_counts_the_tasks_the_model_stopped_or_ended_by_refusing(tmp_pa
     assert {row.task: row.safety_stops for row in rows}["Calculator/Go-net/http"] == 2
     (arm3,) = report.summarize(rows)
     assert (arm3["stopped_by_model"], arm3["ended_on_refusal"], arm3["other_model_answered"]) == (1, 1, 0)
+
+
+def test_rows_csv_reads_back_as_the_rows_it_was_written_from(work: Path) -> None:
+    files = report.write(work, work / "report", work / "eval", workers=8)
+    written = report.baxbench_rows(work / "runs/baxbench") + report.susvibes_rows(work / "runs/susvibes", work / "eval")
+    assert report.read_rows(files["rows"]) == written
+
+
+def test_mcnemar_is_the_two_sided_binomial_test_on_the_discordant_pairs() -> None:
+    assert report.mcnemar_exact(6, 0) == pytest.approx(2 / 64)
+    assert report.mcnemar_exact(0, 6) == pytest.approx(2 / 64)
+    assert report.mcnemar_exact(7, 1) == pytest.approx(2 * (1 + 8) / 256)
+    assert report.mcnemar_exact(2, 2) == 1.0
+    assert report.mcnemar_exact(0, 0) == 1.0
+
+
+def bax(task: str, arm: str, status: str = "completed", func: bool | None = True, sec: bool | None = True,
+        cost: float | None = 1.0, fix: int = 0, refused: int = 0) -> report.Row:
+    wall = None if cost is None else cost * 60
+    return report.Row("baxbench", task, arm, 1, status, func, sec, cost, None, None, None, None, wall,
+                      fix_findings=fix, override_offered_and_refused=refused)
+
+
+def test_compare_pairs_the_tasks_every_arm_scored_and_counts_where_arm2_and_arm3_differ(tmp_path: Path) -> None:
+    rows = [bax(task, arm) for task in ("A/x", "B/x", "C/x", "D/x", "E/x", "F/x", "G/x") for arm in ("arm1", "arm2")]
+    rows[rows.index(bax("C/x", "arm1"))] = bax("C/x", "arm1", sec=False)
+    rows[rows.index(bax("C/x", "arm2"))] = bax("C/x", "arm2", sec=False)
+    rows[rows.index(bax("E/x", "arm2"))] = bax("E/x", "arm2", status="error", func=False, sec=False, cost=None)
+    rows += [
+        bax("A/x", "arm3", cost=1.0),
+        bax("B/x", "arm3", func=False, sec=False, cost=2.0, fix=2, refused=2),
+        bax("C/x", "arm3", cost=3.0),
+        bax("D/x", "arm3", status="stuck", cost=4.0),
+        bax("E/x", "arm3"),
+        bax("G/x", "arm3", status="error", func=None, sec=None, cost=None),
+    ]
+    (tmp_path / "rows.csv").write_text(report.to_csv([asdict(row) for row in rows]), encoding="utf-8")
+    assert bench.main(["compare", str(tmp_path)]) == 0
+    text = (tmp_path / "comparison.md").read_text(encoding="utf-8")
+    assert "| arm2 | 7 | 6 | 7 | 1 | 0 |" in text
+    assert "| arm3 | 6 | 5 | 5 | 0 | 1 |" in text
+    assert "- `paired` has 4 tasks." in text
+    assert "- `all completed` has 3 tasks." in text and "\n  - D/x, arm3 stuck\n" in text
+    assert "| paired | arm2 | 4 | 4 | 3 | 3 / 4 | 4 | 0 | 0 | 0 |" in text
+    assert "| paired | arm3 | 4 | 3 | 3 | 3 / 3 | 3 | 1 | 0 | 0 |" in text
+    assert "| paired | func_pass | 4 | 1 | 0 | 3 | 0 | 1.000 |" in text
+    assert "| paired | sec_pass | 4 | 1 | 1 | 2 | 0 | 1.000 |" in text
+    assert "| paired | sec_pass where both pass func | 3 | 0 | 1 | 2 | 0 | 1.000 |" in text
+    assert "| B/x | pass, pass | fail, fail | completed | 2 | 2 | yes |" in text
+    assert "| C/x | pass, fail | pass, pass | completed | 0 | 0 | yes |" in text
+    assert "| paired | arm3 | 2.50 | 2.50 | 3.70 | 10.00 | 2.50 | 2.50 | 3.70 |" in text
+    assert "| paired | arm3 | 0 | 2 | 0 | 0 | 2 | 0 | 1 | 1 |" in text
+
+
+def test_the_committed_pilot_comparison_is_what_compare_writes_from_its_rows() -> None:
+    assert report.comparison(report.read_rows(PILOT / "rows.csv")) == (PILOT / "comparison.md").read_text(encoding="utf-8")

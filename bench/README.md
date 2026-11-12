@@ -22,6 +22,14 @@ message, and the run's own label and folder. Everything else comes from
 Bedrock model and region, the driver, the timeout, the allowed and
 disallowed tools, and how the patch or app is collected.
 
+## Results
+
+The BaxBench pilot ran on 2026-11-08. It stopped before arm3 finished, when
+warren ruled out any run above $300. The
+[pilot results](results/baxbench-pilot-2026-11-08/README.md) compare the
+plugin off and on, task by task, and say what is missing and why. SusVibes
+v1.0 has not run.
+
 ## Before you start
 
 The experiment host needs:
@@ -110,6 +118,19 @@ assumes that a SusVibes task costs and takes what a pilot task cost and took
 in the same arm, over 186 tasks and 3 runs per arm. Next to it, the report
 prices the run at the SusVibes leaderboard's Claude Code mean of $1.16 per
 task (Claude Sonnet 4, v0.0).
+
+To compare the plugin off and on, run `compare` on a folder that holds a
+`rows.csv`:
+
+```bash
+.venv-bench/bin/python bench/bench.py compare bench-work/report
+```
+
+It writes `comparison.md` beside `rows.csv`. The comparison pairs arm2, the
+plugin off, with arm3, the plugin on, task by task on BaxBench, with arm1 for
+reference. It counts `func_pass` and `sec_pass`, the tasks where arm2 and arm3
+differ with an exact McNemar p-value, the cost and time per task, and the gate
+answers. It reads only `rows.csv`, so it needs no work dir and no network.
 
 ### Run the driver on its own
 

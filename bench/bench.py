@@ -5,11 +5,12 @@
     python bench/bench.py baxbench --arm arm1|arm2|arm3 [--tasks pilot|all|FILE] [--workers N]
     python bench/bench.py susvibes --arm arm1|arm2|arm3 [--run 1|2|3] [--workers N]
     python bench/bench.py report
+    python bench/bench.py compare RESULTS
     python bench/bench.py setup-script --arm arm1|arm2|arm3
     python bench/bench.py driver ...
 
-Every command takes --work DIR (default ./bench-work) and --config FILE
-(default bench/config.env).
+Every command but compare and driver takes --work DIR (default ./bench-work)
+and --config FILE (default bench/config.env).
 """
 
 from __future__ import annotations
@@ -329,6 +330,8 @@ def parser() -> argparse.ArgumentParser:
     sub.choices["baxbench"].add_argument("--tasks", default="pilot", help="pilot, all, or a JSON file with a tasks list")
     sub.choices["baxbench"].add_argument("--force", action="store_true", help="run tasks again that already finished")
     sub.choices["susvibes"].add_argument("--run", type=int, choices=(1, 2, 3), default=1)
+    compare = sub.add_parser("compare", help="write comparison.md, the plugin off and on, from a folder's rows.csv")
+    compare.add_argument("results", type=Path, help="a folder with the rows.csv that report wrote")
     return p
 
 
@@ -338,6 +341,9 @@ def main(argv: list[str]) -> int:
 
         return driver_main(argv[1:])
     args = parser().parse_args(argv)
+    if args.command == "compare":
+        print(report.write_comparison(args.results))
+        return 0
     pins = pinfile.load(args.config)
     work = Work(args.work.resolve())
     workers = getattr(args, "workers", None) or int(pins["WORKERS"])

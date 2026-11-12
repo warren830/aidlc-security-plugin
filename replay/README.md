@@ -55,10 +55,30 @@ runner 对每个用例做两件事，威胁模型用例再多做两件：
 证据里会列出它报的等级。
 
 修好版（带 `pair`、名字以 `-fixed` 结尾）被拦下算误拦。报告开头给出拦截率（有问题的版本被拦下几个）
-和误报率（修好版被误拦几个），以及每对场景两边的结果。
+和误报率（修好版被误拦几个），插件关和插件开各一列，以及插件开时每对场景两边的结果。
 
-结果和 `expected` 不一致时，`run.ts` 失败。缺口不能靠改报告藏起来；补上缺口以后，
+上面四步是插件开时的结果。它和 `expected` 不一致时，`run.ts` 失败。缺口不能靠改报告藏起来；补上缺口以后，
 也要同时改 `expected.md`。
+
+## 插件开和关
+
+每个用例跑两遍，报告的"插件开和关"一节把两次的结果并排列出：
+
+- 插件开：上面四步都做，就是"全部用例"表里的结果。
+- 插件关：只有 AI-DLC core 自己的检查。第 1 步只用 core 的 sensor。第 4 步照做，但不给
+  `--framework-templates-dir`，没有模板时 `required-sections` 不要求任何章节。第 2、3 步不做：Code Generation
+  的 Step 4b（用 AWS Security Agent 扫描 diff、写 `security-scan-result.md`）和门禁都是插件加的，没有插件就没有
+  Continuum 的记录可判。威胁建模阶段也是插件加的，插件关时其实不会有 `security-threat-model.md`；runner 仍然对用例里的
+  这份文件运行第 4 步，看 core 自己会不会拦。
+
+两次运行读的是同一批用例文件，所以两列只差插件。插件开时判的 Continuum 记录是 `replay/continuum.ts` 在 AWS 上
+真实跑过一次的结果，replay 离线重新判定，不调用 AWS。报告里写出 core 有几个 `category: security` sensor。
+CI 固定的 aidlc-workflows `cc22ef55` 里一个也没有，没有模板的 `required-sections` 也不要求章节，所以插件关时
+没有用例被拦下。
+
+插件关这一列没有预期值。换了 aidlc-workflows 的版本、core 的 sensor 变了，这一列就会变，`--check` 会因为
+REPORT.md 过期而失败，重新生成就能看到变化。core 的 agent 和阶段说明里也写了安全要求，但它们要靠模型执行，
+replay 不调用模型，所以不在这个比较里。
 
 ## 运行
 

@@ -8,9 +8,13 @@
 //     with the coverage merged in, beside the case's threat model;
 //   - for a case with a threat model, core's required-sections worker on it,
 //     against the plugin's threat model template.
-// A case's measured result must equal the `expected` its expected.md declares,
-// so a gap cannot be hidden by editing the report, and closing one fails the
-// run until expected.md says so.
+// That is the pipeline with the plugin on. Each case also runs with the plugin
+// off: only core's security-category sensors, and required-sections with no
+// template, because the threat model template is the plugin's. The report puts
+// the two results side by side.
+// A case's result with the plugin on must equal the `expected` its expected.md
+// declares, so a gap cannot be hidden by editing the report, and closing one
+// fails the run until expected.md says so.
 // Usage: bun replay/run.ts [--check]. --check also fails when REPORT.md is stale.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -61,9 +65,22 @@ interface Sensor {
 	tool: string;
 }
 
+// The plugin's checks run only when `plugin` is set: its gate on the Continuum
+// record, the threat coverage check, and its template for required-sections.
+interface Pipeline {
+	sensors: Sensor[];
+	plugin: boolean;
+}
+
 interface Outcome {
 	result: Result;
 	evidence: string[];
+}
+
+interface Row {
+	spec: Case;
+	off: Outcome;
+	on: Outcome;
 }
 
 interface Verdict {
@@ -75,8 +92,8 @@ interface Verdict {
 interface SectionsVerdict {
 	pass: boolean;
 	template?: "applied" | "ineligible";
-	template_expected: string[];
-	template_missing: string[];
+	template_expected?: string[];
+	template_missing?: string[];
 }
 
 interface ContinuumRecord {
@@ -96,19 +113,16 @@ function frontmatter(markdown: string): Record<string, string> {
 
 // A sensor's command names its worker under {{HARNESS_DIR}}/tools/, which is
 // the tools/ folder beside the manifest in the authored source.
-function securitySensors(): Sensor[] {
-	const roots = [join(upstreamDir(), "core"), PLUGIN_ROOT];
-	return roots.flatMap((root) =>
-		readdirSync(join(root, "sensors"))
-			.filter((file) => file.endsWith(".md"))
-			.map((file) => frontmatter(readFileSync(join(root, "sensors", file), "utf-8")))
-			.filter((fields) => fields.category === "security" && fields.matches)
-			.map((fields) => {
-				const worker = /\{\{HARNESS_DIR\}\}\/tools\/(\S+\.ts)/.exec(fields.command ?? "")?.[1];
-				if (worker === undefined) throw new Error(`sensor ${fields.id}: no worker in its command`);
-				return { id: fields.id, matches: fields.matches, tool: join(root, "tools", worker) };
-			}),
-	);
+function securitySensors(root: string): Sensor[] {
+	return readdirSync(join(root, "sensors"))
+		.filter((file) => file.endsWith(".md"))
+		.map((file) => frontmatter(readFileSync(join(root, "sensors", file), "utf-8")))
+		.filter((fields) => fields.category === "security" && fields.matches)
+		.map((fields) => {
+			const worker = /\{\{HARNESS_DIR\}\}\/tools\/(\S+\.ts)/.exec(fields.command ?? "")?.[1];
+			if (worker === undefined) throw new Error(`sensor ${fields.id}: no worker in its command`);
+			return { id: fields.id, matches: fields.matches, tool: join(root, "tools", worker) };
+		});
 }
 
 function readCase(id: string): Case {
@@ -185,8 +199,8 @@ function fireCoverage(spec: Case, record: ContinuumRecord): Verdict | null {
 
 // The flags the dispatcher gives required-sections at the threat model's gate,
 // minus --templates-dir. A case has no space memory, so only the plugin's
-// template can apply.
-function fireSections(spec: Case): SectionsVerdict | null {
+// template can apply, and with the plugin off no template does.
+function fireSections(spec: Case, templates: string | undefined): SectionsVerdict | null {
 	const dir = join(CASES, spec.id);
 	if (!existsSync(join(dir, THREAT_MODEL))) return null;
 	const verdict = fire<SectionsVerdict>(
@@ -194,18 +208,17 @@ function fireSections(spec: Case): SectionsVerdict | null {
 		join(dir, THREAT_MODEL),
 		dir,
 		"security-threat-model",
-		"--framework-templates-dir",
-		TEMPLATES,
+		...(templates === undefined ? [] : ["--framework-templates-dir", templates]),
 		"--template-eligible",
 		"security-threat-model",
 	);
-	if (verdict.template !== "applied") {
-		throw new Error(`${spec.id}: required-sections found no ${THREAT_MODEL} template in ${TEMPLATES}, so it checked nothing`);
+	if (templates !== undefined && verdict.template !== "applied") {
+		throw new Error(`${spec.id}: required-sections found no ${THREAT_MODEL} template in ${templates}, so it checked nothing`);
 	}
 	return verdict;
 }
 
-function measure(spec: Case, sensors: Sensor[]): Outcome {
+function measure(spec: Case, { sensors, plugin }: Pipeline): Outcome {
 	const dir = join(CASES, spec.id);
 	const repo = join(dir, "repo");
 	const evidence: string[] = [];
@@ -219,37 +232,37 @@ function measure(spec: Case, sensors: Sensor[]): Outcome {
 			evidence.push(`\`${sensor.id}\` 对 \`${file}\`：${verdict.pass ? "通过" : verdict.findings.join("；")}`);
 		}
 	}
-	const recordPath = join(dir, CONTINUUM_RECORD);
-	const record = JSON.parse(
-		/^```json\n([\s\S]*?)\n```$/m.exec(readFileSync(recordPath, "utf-8"))?.[1] ?? "{}",
-	) as ContinuumRecord;
-	const reported = record.findings.map(({ risk_level, name, code_locations: [where] }) => {
-		const location = where ? ` @ ${where.file_path}${where.line_start === undefined ? "" : `:${where.line_start}`}` : "";
-		return `${risk_level} ${name.split(":")[0]}${location}`;
-	});
-	const verdict = fire(GATE, recordPath, dir);
-	evidence.push(
-		`Continuum \`${record.scan.scan_id}\`（${record.scan.region}，${record.scan.completed_at.slice(0, 10)}）报了 ${reported.length} 条${
-			reported.length > 0 ? `：${reported.join("、")}` : ""
-		}；门禁${verdict.pass ? "放行" : `拦下：${blockedBy(verdict.findings)}`}`,
-	);
-	const coverage = fireCoverage(spec, record);
-	if (coverage !== null) {
+	const byPriority: [Result, boolean][] = [["local", detected]];
+	if (plugin) {
+		const recordPath = join(dir, CONTINUUM_RECORD);
+		const record = JSON.parse(
+			/^```json\n([\s\S]*?)\n```$/m.exec(readFileSync(recordPath, "utf-8"))?.[1] ?? "{}",
+		) as ContinuumRecord;
+		const reported = record.findings.map(({ risk_level, name, code_locations: [where] }) => {
+			const location = where ? ` @ ${where.file_path}${where.line_start === undefined ? "" : `:${where.line_start}`}` : "";
+			return `${risk_level} ${name.split(":")[0]}${location}`;
+		});
+		const verdict = fire(GATE, recordPath, dir);
 		evidence.push(
-			`威胁覆盖检查（coverage_mode ${coverage.coverage_mode}）${coverage.pass ? "放行" : `拦下：${blockedBy(coverage.findings)}`}`,
+			`Continuum \`${record.scan.scan_id}\`（${record.scan.region}，${record.scan.completed_at.slice(0, 10)}）报了 ${reported.length} 条${
+				reported.length > 0 ? `：${reported.join("、")}` : ""
+			}；门禁${verdict.pass ? "放行" : `拦下：${blockedBy(verdict.findings)}`}`,
 		);
+		const coverage = fireCoverage(spec, record);
+		if (coverage !== null) {
+			evidence.push(
+				`威胁覆盖检查（coverage_mode ${coverage.coverage_mode}）${coverage.pass ? "放行" : `拦下：${blockedBy(coverage.findings)}`}`,
+			);
+		}
+		byPriority.push(["continuum", !verdict.pass], ["coverage", coverage?.pass === false]);
 	}
-	const sections = fireSections(spec);
+	const sections = fireSections(spec, plugin ? TEMPLATES : undefined);
 	if (sections !== null) {
-		const missing = sections.template_missing.map((heading) => `\`${heading}\``).join("、");
-		evidence.push(`必备章节检查（模板 ${sections.template_expected.length} 节）${sections.pass ? "放行" : `拦下：缺 ${missing}`}`);
+		const template = sections.template === "applied" ? `模板 ${sections.template_expected?.length} 节` : "没有模板";
+		const missing = (sections.template_missing ?? []).map((heading) => `\`${heading}\``).join("、");
+		evidence.push(`必备章节检查（${template}）${sections.pass ? "放行" : `拦下：缺 ${missing}`}`);
 	}
-	const byPriority: [Result, boolean][] = [
-		["local", detected],
-		["continuum", !verdict.pass],
-		["coverage", coverage?.pass === false],
-		["sections", sections?.pass === false],
-	];
+	byPriority.push(["sections", sections?.pass === false]);
 	const result = byPriority.find(([, blocked]) => blocked)?.[0] ?? "not-detected";
 	return { result, evidence };
 }
@@ -258,26 +271,29 @@ function cell(text: string): string {
 	return text.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-function report(rows: { spec: Case; outcome: Outcome }[]): string {
-	const blocked = ({ outcome }: { outcome: Outcome }) => outcome.result !== "not-detected";
-	const resultLabel = ({ spec, outcome }: { spec: Case; outcome: Outcome }) =>
-		isFixed(spec) ? (blocked({ outcome }) ? "误拦（修好版）" : "放行（修好版）") : RESULTS[outcome.result];
+function report(rows: Row[], coreSensors: number): string {
+	const blocked = (outcome: Outcome) => outcome.result !== "not-detected";
+	const label = (spec: Case, outcome: Outcome) =>
+		isFixed(spec) ? (blocked(outcome) ? "误拦（修好版）" : "放行（修好版）") : RESULTS[outcome.result];
 	const table = rows.map(
-		(row) =>
-			`| [${cell(row.spec.vector)}](cases/${row.spec.id}/expected.md) | ${STAGES[row.spec.stage]} | ${resultLabel(row)} | ${cell(row.outcome.evidence.join("；"))} |`,
+		({ spec, on }) =>
+			`| [${cell(spec.vector)}](cases/${spec.id}/expected.md) | ${STAGES[spec.stage]} | ${label(spec, on)} | ${cell(on.evidence.join("；"))} |`,
 	);
 	const problemRows = rows.filter(({ spec }) => !isFixed(spec));
 	const fixedRows = rows.filter(({ spec }) => isFixed(spec));
-	const caught = problemRows.filter(blocked).length;
-	const falseAlarms = fixedRows.filter(blocked).length;
+	const share = (group: Row[], pipeline: "off" | "on") =>
+		`${group.filter((row) => blocked(row[pipeline])).length} / ${group.length}`;
 	const pairs = fixedRows.map((fixed) => {
 		const problem = rows.find(({ spec }) => spec.id === fixed.spec.pair);
-		return `| ${cell(problem?.spec.vector ?? fixed.spec.pair ?? "")} | ${problem ? resultLabel(problem) : "缺失"} | ${resultLabel(fixed)} |`;
+		return `| ${cell(problem?.spec.vector ?? fixed.spec.pair ?? "")} | ${problem ? label(problem.spec, problem.on) : "缺失"} | ${label(fixed.spec, fixed.on)} |`;
 	});
+	const offOn = rows.map(
+		({ spec, off, on }) => `| ${cell(spec.vector)} | ${label(spec, off)} | ${label(spec, on)} | ${cell(off.evidence.join("；"))} |`,
+	);
 	const gaps = problemRows
-		.filter((row) => !blocked(row))
+		.filter(({ on }) => !blocked(on))
 		.map(({ spec }) => `- ${spec.vector}。建议补在：${GAP_OWNERS[spec.gap_owner as GapOwner]}。`);
-	const wrong = fixedRows.filter(blocked).map(({ spec }) => `- ${spec.vector}。`);
+	const wrong = fixedRows.filter(({ on }) => blocked(on)).map(({ spec }) => `- ${spec.vector}。`);
 	return [
 		"# 验证测试套件报告",
 		"",
@@ -289,13 +305,27 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 		"",
 		"## 拦截率和误报率",
 		"",
-		"| 指标 | 结果 |",
-		"| --- | --- |",
-		`| 拦截率：有问题的版本被拦下 | ${caught} / ${problemRows.length} |`,
-		`| 误报率：修好的版本被误拦 | ${falseAlarms} / ${fixedRows.length} |`,
+		"插件开是这个仓库的完整流程，插件关是只有 AI-DLC core 的情况，两列来自同一次运行，定义见\"插件开和关\"。",
 		"",
-		...(pairs.length > 0 ? ["| 成对场景 | 有问题版 | 修好版 |", "| --- | --- | --- |", ...pairs, ""] : []),
+		"| 指标 | 插件关 | 插件开 |",
+		"| --- | --- | --- |",
+		`| 拦截率：有问题的版本被拦下 | ${share(problemRows, "off")} | ${share(problemRows, "on")} |`,
+		`| 误报率：修好的版本被误拦 | ${share(fixedRows, "off")} | ${share(fixedRows, "on")} |`,
+		"",
+		...(pairs.length > 0 ? ["插件开时每对场景两边的结果：", "", "| 成对场景 | 有问题版 | 修好版 |", "| --- | --- | --- |", ...pairs, ""] : []),
+		"## 插件开和关",
+		"",
+		`插件关：只运行 AI-DLC core 自己的检查。对用例文件运行 core 的 \`category: security\` sensor（core 有 ${coreSensors} 个），`,
+		"对威胁模型运行 core 的 `required-sections`，但不给插件的模板。不运行插件的门禁，也不做威胁覆盖检查，",
+		"所以 Continuum 的记录只在插件开时参与判定。插件开：再加上插件的 sensor、门禁、威胁覆盖检查和插件的模板，结果见\"全部用例\"。",
+		"",
+		"| 测试向量 | 插件关 | 插件开 | 插件关时的证据 |",
+		"| --- | --- | --- | --- |",
+		...offOn,
+		"",
 		"## 全部用例",
+		"",
+		"插件开时的结果。",
 		"",
 		"| 测试向量 | 检测环节 | 当前结果 | 证据 |",
 		"| --- | --- | --- | --- |",
@@ -313,23 +343,27 @@ function report(rows: { spec: Case; outcome: Outcome }[]): string {
 }
 
 const check = process.argv.includes("--check");
-const sensors = securitySensors();
-const rows = readdirSync(CASES, { withFileTypes: true })
+const core = securitySensors(join(upstreamDir(), "core"));
+const pipelines: Record<"off" | "on", Pipeline> = {
+	off: { sensors: core, plugin: false },
+	on: { sensors: [...core, ...securitySensors(PLUGIN_ROOT)], plugin: true },
+};
+const rows: Row[] = readdirSync(CASES, { withFileTypes: true })
 	.filter((entry) => entry.isDirectory())
 	.map((entry) => entry.name)
 	.sort()
 	.map((id) => {
 		const spec = readCase(id);
-		return { spec, outcome: measure(spec, sensors) };
+		return { spec, off: measure(spec, pipelines.off), on: measure(spec, pipelines.on) };
 	});
 
 const failures = rows
-	.filter(({ spec, outcome }) => outcome.result !== spec.expected)
+	.filter(({ spec, on }) => on.result !== spec.expected)
 	.map(
-		({ spec, outcome }) =>
-			`${spec.id}: measured ${outcome.result}, expected.md says ${spec.expected}. Fix the detection or update expected.md with the evidence.`,
+		({ spec, on }) =>
+			`${spec.id}: measured ${on.result}, expected.md says ${spec.expected}. Fix the detection or update expected.md with the evidence.`,
 	);
-const text = report(rows);
+const text = report(rows, core.length);
 if (check) {
 	const current = existsSync(REPORT) ? readFileSync(REPORT, "utf-8") : "";
 	if (current !== text) failures.push(`${relative(REPO_ROOT, REPORT)} is stale. Run \`bun replay/run.ts\` and commit it.`);
